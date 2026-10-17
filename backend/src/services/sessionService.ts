@@ -32,23 +32,15 @@ export async function getSession(sessionId: string): Promise<SessionState | null
     return doc ? toState(doc) : null;
 }
 
-/** Returns the session, creating an empty one on first access. Safe under concurrent calls. */
-export async function getOrCreateSession(sessionId: string): Promise<SessionState> {
-    try {
-        const doc = await Session.findOneAndUpdate(
-            { sessionId },
-            { $setOnInsert: { sessionId, friends: [], orders: [], paidDebts: [], version: 0 } },
-            { upsert: true, new: true, lean: true }
-        );
-        return toState(doc);
-    } catch (error: any) {
-        // Two first requests raced on the unique index: the loser just reads the winner's document.
-        if (error?.code === 11000) {
-            const doc = await Session.findOne({ sessionId }).lean();
-            if (doc) return toState(doc);
-        }
-        throw error;
-    }
+const emptyState = (sessionId: string): SessionState => ({ sessionId, friends: [], orders: [], paidDebts: [], version: 0 });
+
+/**
+ * Returns the stored session, or an empty version-0 one when it does not exist yet.
+ * Reading never writes: the document is only created by the first real edit (see writeSession),
+ * so visitors, link previews and bots cost nothing.
+ */
+export async function loadSession(sessionId: string): Promise<SessionState> {
+    return (await getSession(sessionId)) ?? emptyState(sessionId);
 }
 
 export type WriteResult = { ok: true; session: SessionState } | { ok: false; session: SessionState };
@@ -56,28 +48,35 @@ export type WriteResult = { ok: true; session: SessionState } | { ok: false; ses
 /**
  * Compare-and-set write. It only succeeds when the stored version still equals `baseVersion`,
  * so a client holding stale (or never-loaded) data can never overwrite newer data.
+ * A write based on version 0 creates the document if it does not exist yet.
  */
 export async function writeSession(
     sessionId: string,
     baseVersion: number,
     data: SessionDraft
 ): Promise<WriteResult> {
+    const isFirstWrite = baseVersion === 0;
     // Documents created before versioning have no `version` field: treat them as 0.
-    const versionFilter =
-        baseVersion === 0 ? { $or: [{ version: 0 }, { version: { $exists: false } }] } : { version: baseVersion };
+    const filter = isFirstWrite
+        ? { sessionId, $or: [{ version: 0 }, { version: { $exists: false } }] }
+        : { sessionId, version: baseVersion };
 
-    const updated = await Session.findOneAndUpdate(
-        { sessionId, ...versionFilter },
-        {
-            $set: { friends: data.friends, orders: data.orders, paidDebts: data.paidDebts },
-            $inc: { version: 1 },
-        },
-        { new: true, lean: true }
-    );
-    if (updated) return { ok: true, session: toState(updated) };
+    try {
+        const updated = await Session.findOneAndUpdate(
+            filter,
+            {
+                $set: { friends: data.friends, orders: data.orders, paidDebts: data.paidDebts },
+                $inc: { version: 1 },
+            },
+            { new: true, lean: true, upsert: isFirstWrite }
+        );
+        if (updated) return { ok: true, session: toState(updated) };
+    } catch (error: any) {
+        // Upsert collided with an existing document whose version moved on: that is a plain conflict.
+        if (error?.code !== 11000) throw error;
+    }
 
-    const current = await getOrCreateSession(sessionId);
-    return { ok: false, session: current };
+    return { ok: false, session: await loadSession(sessionId) };
 }
 
 export const toDraft = (body: SessionBody): SessionDraft => ({
@@ -96,7 +95,7 @@ export async function mutateSession<T>(
     maxAttempts = 5
 ): Promise<{ session: SessionState; result: T }> {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const current = await getOrCreateSession(sessionId);
+        const current = await loadSession(sessionId);
         const draft: SessionDraft = structuredClone({
             friends: current.friends,
             orders: current.orders,

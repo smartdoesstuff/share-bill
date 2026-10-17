@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { sessionBodySchema, sessionIdSchema } from '../lib/schemas';
-import { getOrCreateSession, toDraft, writeSession } from '../services/sessionService';
+import { loadSession, toDraft, writeSession } from '../services/sessionService';
 
 const router = express.Router();
 
@@ -16,7 +16,7 @@ const parseSessionId = (req: Request, res: Response): string | null => {
 
 /**
  * GET /api/sessions/:sessionId
- * Returns the session (creating it on first use). With `?since=<version>` it answers
+ * Returns the session, or an empty one that is only stored by the first PUT. With `?since=<version>` it answers
  * `{ unchanged: true }` when nothing changed, which keeps polling cheap.
  */
 router.get('/:sessionId', async (req: Request, res: Response) => {
@@ -24,7 +24,7 @@ router.get('/:sessionId', async (req: Request, res: Response) => {
     if (!sessionId) return;
 
     try {
-        const session = await getOrCreateSession(sessionId);
+        const session = await loadSession(sessionId);
         const since = Number(req.query.since);
         if (req.query.since !== undefined && Number.isInteger(since) && since === session.version) {
             res.status(200).json({ unchanged: true, version: session.version });

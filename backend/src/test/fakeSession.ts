@@ -23,13 +23,17 @@ export function installFakeSessionModel() {
     });
 
     M.findOneAndUpdate = async (filter: any, update: any, opts: any) => {
-        let doc = store.get(filter.sessionId);
-        if (!doc && opts?.upsert) {
-            doc = structuredClone(update.$setOnInsert);
-            store.set(doc.sessionId, doc);
-            return structuredClone(doc);
+        const doc = store.get(filter.sessionId);
+        if (!doc || !matches(doc, filter)) {
+            if (!doc && opts?.upsert) {
+                const created = { sessionId: filter.sessionId, version: update.$inc?.version ?? 0, ...structuredClone(update.$set ?? {}) };
+                store.set(created.sessionId, created);
+                return structuredClone(created);
+            }
+            // Upsert on an existing document that does not match the filter violates the unique index.
+            if (doc && opts?.upsert) throw Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+            return null;
         }
-        if (!doc || !matches(doc, filter)) return null;
         Object.assign(doc, structuredClone(update.$set ?? {}));
         if (update.$inc?.version) doc.version = (doc.version ?? 0) + update.$inc.version;
         return structuredClone(doc);

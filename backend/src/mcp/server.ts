@@ -7,7 +7,7 @@ import {
     DomainError,
     SessionDraft,
     SessionState,
-    getOrCreateSession,
+    loadSession,
     mutateSession,
 } from '../services/sessionService';
 
@@ -157,13 +157,14 @@ export function createMcpServer(): McpServer {
         'create_session',
         {
             title: 'Create a new bill session',
-            description: 'Creates an empty bill-splitting session and returns its id and the link to open it in the web app.',
+            description: 'Starts a new bill-splitting session and returns its id and the link to open it in the web app. The session is stored once something is added to it.',
             inputSchema: {},
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         },
         guarded(async () => {
-            const state = await getOrCreateSession(randomUUID());
-            return { sessionId: state.sessionId, url: appUrl(state.sessionId) };
+            // Nothing is stored yet: the session is created by the first friend or order added to it.
+            const sessionId = randomUUID();
+            return { sessionId, url: appUrl(sessionId) };
         })
     );
 
@@ -175,7 +176,7 @@ export function createMcpServer(): McpServer {
             inputSchema: { sessionId },
             annotations: { readOnlyHint: true, openWorldHint: false },
         },
-        guarded(async (args: { sessionId: string }) => describe(await getOrCreateSession(args.sessionId)))
+        guarded(async (args: { sessionId: string }) => describe(await loadSession(args.sessionId)))
     );
 
     server.registerTool(
@@ -187,7 +188,7 @@ export function createMcpServer(): McpServer {
             annotations: { readOnlyHint: true, openWorldHint: false },
         },
         guarded(async (args: { sessionId: string }) => {
-            const { friends, settlements, totalSpent, url } = describe(await getOrCreateSession(args.sessionId));
+            const { friends, settlements, totalSpent, url } = describe(await loadSession(args.sessionId));
             return { url, totalSpent, balances: friends.map((f) => ({ name: f.name, netBalance: f.netBalance })), settlements };
         })
     );

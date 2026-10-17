@@ -6,7 +6,7 @@ import { installFakeSessionModel } from '../test/fakeSession';
 import { createMcpServer } from './server';
 
 async function connect() {
-    installFakeSessionModel();
+    const { store } = installFakeSessionModel();
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await createMcpServer().connect(serverTransport);
     const client = new Client({ name: 'test', version: '0.0.0' });
@@ -15,7 +15,7 @@ async function connect() {
         const res: any = await client.callTool({ name, arguments: args });
         return { isError: !!res.isError, data: res.structuredContent, text: res.content?.[0]?.text as string };
     };
-    return { client, call };
+    return { client, call, store };
 }
 
 test('exposes the expected tools with annotations', async () => {
@@ -104,4 +104,12 @@ test('an item paid by several people', async () => {
 
     const cantRemove = await call('remove_friend', { sessionId, friend: 'Bob' });
     assert.equal(cantRemove.isError, true);
+});
+
+test('create_session stores nothing until something is added', async () => {
+    const { call, store } = await connect();
+    const { data } = await call('create_session', {});
+    assert.equal(store.size, 0);
+    await call('add_friends', { sessionId: data!.sessionId, friends: [{ name: 'Ann' }] });
+    assert.equal(store.size, 1);
 });

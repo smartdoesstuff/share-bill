@@ -22,6 +22,8 @@ Tests: `npm test` in `backend/` and in `frontend/`.
 
 ## How data stays safe
 
+Opening the site shows a landing page and costs nothing: a bill is only stored when its first friend or item is saved (a write based on version 0 creates it). Reads of a bill that does not exist return an empty one without writing.
+
 Every session carries a `version`. The web app only writes after its first successful load, and every write says which version it is based on (`PUT /api/sessions/:id` with `baseVersion`). If the server has a newer version it answers `409` with the latest data and the client three-way merges its edits on top instead of overwriting. A slow browser, a failed load, or two people editing at once can no longer wipe the stored bill. The app also polls for changes made elsewhere (other phones, an LLM via MCP).
 
 ## MCP server
