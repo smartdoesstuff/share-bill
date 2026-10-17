@@ -6,12 +6,17 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "mcp:stdio": "tsx src/mcp/stdio.ts",
+    "start:mcp-stdio": "node dist/mcp/stdio.js",
+    "test": "tsx --test src/**/*.test.ts",
+    "dev:memory": "tsx src/test/memoryServer.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/express": "^5.0.0",
     "@types/mongoose": "^5.11.96",
     "@types/node": "^22.8.0",
@@ -20,7 +25,8 @@
     "express": "^4.21.1",
     "mongoose": "^8.7.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
