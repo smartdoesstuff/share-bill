@@ -5,9 +5,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:5050/api}
     platform: linux/amd64
-    env_file:
-      - ./frontend/.env
     image: share-bill-frontend
     ports:
       - "3000:3000"
@@ -20,6 +20,8 @@ services:
     platform: linux/amd64
     env_file:
       - ./backend/.env
+    environment:
+      PORT: 5050
     image: share-bill-backend
     ports:
       - "5050:5050"

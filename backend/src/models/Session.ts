@@ -1,48 +1,58 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 
-// Define interfaces
-interface IFriend {
+export interface IFriend {
     id: string;
     name: string;
     paid: boolean;
     paymentAddress?: string;
 }
 
-interface IOrderItem {
+export interface IOrderItem {
     id: string;
     description: string;
     amount: number;
     paidBy: string;
-    assignedTo: string[]; // Array of friend IDs
+    assignedTo: string[]; // friend ids
 }
 
-export interface ISession extends Document {
+export interface ISession {
     sessionId: string;
     friends: IFriend[];
     orders: IOrderItem[];
+    /** Settlement keys ("fromId->toId") the group has marked as transferred. */
+    paidDebts: string[];
+    /** Bumped on every write; used for optimistic concurrency control. */
+    version: number;
 }
 
-// Define Schemas
-const FriendSchema: Schema = new Schema({
-    id: { type: String, required: true },
-    name: { type: String, required: true },
-    paid: { type: Boolean, required: true },
-    paymentAddress: { type: String },
-});
+const FriendSchema = new Schema<IFriend>(
+    {
+        id: { type: String, required: true },
+        name: { type: String, required: true },
+        paid: { type: Boolean, default: false },
+        paymentAddress: { type: String },
+    },
+    { _id: false }
+);
 
-const OrderItemSchema: Schema = new Schema({
-    id: { type: String, required: true },
-    description: { type: String, required: true },
-    amount: { type: Number, required: true },
-    paidBy: { type: String, required: true },
-    assignedTo: { type: [String], required: true },
-});
+const OrderItemSchema = new Schema<IOrderItem>(
+    {
+        id: { type: String, required: true },
+        description: { type: String, required: true },
+        amount: { type: Number, required: true },
+        paidBy: { type: String, required: true },
+        assignedTo: { type: [String], default: [] },
+    },
+    { _id: false }
+);
 
-const SessionSchema: Schema = new Schema(
+const SessionSchema = new Schema<ISession>(
     {
         sessionId: { type: String, unique: true, required: true },
-        friends: [FriendSchema],
-        orders: [OrderItemSchema],
+        friends: { type: [FriendSchema], default: [] },
+        orders: { type: [OrderItemSchema], default: [] },
+        paidDebts: { type: [String], default: [] },
+        version: { type: Number, default: 0 },
     },
     { timestamps: true }
 );

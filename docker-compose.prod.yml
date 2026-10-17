@@ -5,11 +5,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
     platform: linux/amd64
-    environment:
-      NEXT_PUCLIC_API_BASE_URL:
-    env_file:
-      - ./frontend/.env
     image: share-bill-frontend
     ports:
       - "5051:3000"
@@ -20,11 +18,10 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     platform: linux/amd64
-    environment:
-      MONGO_URI:
-      PORT:
     env_file:
       - ./backend/.env
+    environment:
+      PORT: 5050
     image: share-bill-backend
     ports:
       - "5050:5050"

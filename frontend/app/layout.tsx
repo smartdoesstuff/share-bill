@@ -1,14 +1,18 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import { Toaster } from "../components/ui/sonner"
+import { Inter, Noto_Sans_Thai } from 'next/font/google';
+import { Toaster } from "../components/ui/sonner";
+import { I18nProvider } from "../lib/i18n";
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
+const notoThai = Noto_Sans_Thai({ subsets: ['thai'], variable: '--font-thai', display: 'swap' });
 
 export const metadata: Metadata = {
     title: 'Share Bill',
-    description: 'Easy way to split the bill with your friends',
-    
+    description: 'Easy way to split the bill with your friends / หารบิลกับเพื่อนแบบง่าย ๆ',
+    // Next 13.5 has no separate `viewport` export yet.
+    viewport: { width: 'device-width', initialScale: 1, viewportFit: 'cover' },
+    themeColor: '#ffffff',
 };
 
 export default function RootLayout({
@@ -17,16 +21,13 @@ export default function RootLayout({
     children: React.ReactNode;
 }) {
     return (
-        <html lang="en">
-        <body className={inter.className}>
-            {children}
-            <footer className="text-center p-4 bg-gray-100">
-                <p className="text-sm text-gray-600">
-                    © {new Date().getFullYear()} Share Bill. All rights reserved.
-                </p>
-            </footer>
-            <Toaster />
-        </body>
+        <html lang="th">
+            <body className={`${inter.variable} ${notoThai.variable} font-sans antialiased`}>
+                <I18nProvider>
+                    {children}
+                    <Toaster position="top-center" />
+                </I18nProvider>
+            </body>
         </html>
     );
 }
