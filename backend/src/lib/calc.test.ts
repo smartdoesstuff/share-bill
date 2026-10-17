@@ -114,3 +114,20 @@ test('several places paid by different people settle with few transfers', () => 
     assert.deepEqual(balances, { a: 17000, b: -4000, c: -13000 });
     assert.equal(computeSettlements(balances).length, 2);
 });
+
+test('item totals include each item\'s share of the bill discount, service charge and VAT and add up to the total', () => {
+    const r = computeBill(
+        bill({
+            items: [
+                { id: 'x', name: 'X', price: 100, assignedTo: ['a'] },
+                { id: 'y', name: 'Y', price: 300, assignedTo: ['b'] },
+            ],
+            discount: { type: 'percent', value: 10 },
+            servicePercent: 10,
+            vatPercent: 7,
+        }),
+        ids
+    );
+    assert.deepEqual([r.itemTotals.x, r.itemTotals.y], [10593, 31779]);
+    assert.equal(r.itemTotals.x + r.itemTotals.y, r.total);
+});

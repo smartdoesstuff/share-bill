@@ -18,6 +18,7 @@ export interface IItem {
     name: string;
     price: number;
     discount?: IAdjustment;
+    tags?: string[];
     assignedTo: string[]; // friend ids
 }
 
@@ -64,6 +65,7 @@ const ItemSchema = new Schema<IItem>(
         name: { type: String, required: true },
         price: { type: Number, required: true },
         discount: { type: AdjustmentSchema },
+        tags: { type: [String], default: undefined },
         assignedTo: { type: [String], default: [] },
     },
     { _id: false }

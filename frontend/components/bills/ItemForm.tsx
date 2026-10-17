@@ -5,6 +5,9 @@ import { Plus } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { AdjustmentInput } from "./AdjustmentInput";
+import { TagEditor } from "./TagEditor";
+import { Chip } from "../Chip";
+import { normalizeTags, suggestTag, tagKey, tagLabel } from "../../lib/tags";
 import { useI18n } from "../../lib/i18n";
 import { parseMoney } from "../../lib/money";
 import { Adjustment } from "../../types";
@@ -13,6 +16,7 @@ export interface ItemDraft {
     name: string;
     price: number;
     discount?: Adjustment;
+    tags: string[];
 }
 
 interface ItemFormProps {
@@ -31,21 +35,28 @@ export function ItemForm({ idPrefix, initial, submitLabel, onSubmit, onCancel, a
     const [price, setPrice] = useState(initial ? String(initial.price) : "");
     const [discount, setDiscount] = useState<Adjustment | undefined>(initial?.discount);
     const [showDiscount, setShowDiscount] = useState(!!initial?.discount);
+    const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
+    const [showTags, setShowTags] = useState((initial?.tags ?? []).length > 0);
     const [formKey, setFormKey] = useState(0); // remounts the discount input after a reset
 
     const parsed = parseMoney(price);
+    // A hint from the name (e.g. beer -> alcohol); the user decides whether to add it.
+    const suggestion = suggestTag(name);
+    const suggestionTaken = !!suggestion && tags.some((x) => tagKey(x) === suggestion);
     const canSubmit = name.trim().length > 0 && parsed >= 0 && price.trim() !== "";
 
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
         event.stopPropagation();
         if (!canSubmit) return;
-        onSubmit({ name: name.trim(), price: parsed, discount });
+        onSubmit({ name: name.trim(), price: parsed, discount, tags: normalizeTags(tags) });
         if (!initial) {
             setName("");
             setPrice("");
             setDiscount(undefined);
             setShowDiscount(false);
+            setTags([]);
+            setShowTags(false);
             setFormKey((k) => k + 1);
         }
     };
@@ -84,6 +95,26 @@ export function ItemForm({ idPrefix, initial, submitLabel, onSubmit, onCancel, a
                     className="h-12 bg-background text-base"
                 />
             </div>
+            {suggestion && !suggestionTaken && (
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-muted-foreground">{t("suggestTagLabel")}</span>
+                    <Chip
+                        onClick={() => {
+                            setTags((cur) => normalizeTags([...cur, suggestion]));
+                            setShowTags(true);
+                        }}
+                    >
+                        {tagLabel(suggestion, t)}
+                    </Chip>
+                </div>
+            )}
+            {showTags ? (
+                <TagEditor idPrefix={idPrefix} tags={tags} onChange={setTags} />
+            ) : (
+                <button type="button" onClick={() => setShowTags(true)} className="block min-h-[44px] text-sm text-primary">
+                    {t("addTags")}
+                </button>
+            )}
             {showDiscount ? (
                 <AdjustmentInput key={formKey} id={`${idPrefix}-discount`} label={t("itemDiscount")} value={discount} onChange={setDiscount} />
             ) : (

@@ -11,6 +11,7 @@ import { ShareButton } from "../ShareButton";
 import { FriendAvatar } from "../FriendAvatar";
 import { EmptyState } from "../EmptyState";
 import { WhoAteWhat } from "../bills/WhoAteWhat";
+import { tagKey, tagLabel } from "../../lib/tags";
 import { StepHeader } from "./StepHeader";
 import { StepProps } from "./types";
 
@@ -23,6 +24,22 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
     }, [data.friends, data.bills]);
 
     const ids = data.friends.map((f) => f.id);
+
+    // Spend per tag including each item's share of discounts, service charge and VAT.
+    const tagTotals = useMemo(() => {
+        const sums = new Map<string, { tag: string; cents: number }>();
+        for (const bill of data.bills) {
+            const { itemTotals } = computeBill(bill, ids);
+            for (const item of bill.items)
+                for (const tag of item.tags ?? []) {
+                    const entry = sums.get(tagKey(tag)) ?? { tag, cents: 0 };
+                    entry.cents += itemTotals[item.id] ?? 0;
+                    sums.set(tagKey(tag), entry);
+                }
+        }
+        return Array.from(sums.values()).sort((a, b) => b.cents - a.cents);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data.bills, data.friends]);
     const total = data.bills.reduce((sum, bill) => sum + computeBill(bill, ids).total, 0) / 100;
     const average = data.friends.length ? total / data.friends.length : 0;
     const paid = new Set(data.paidDebts);
@@ -159,6 +176,23 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
                     })}
                 </ul>
             </div>
+
+            {tagTotals.length > 0 && (
+                <div className="space-y-2">
+                    <div>
+                        <h3 className="text-base font-semibold">{t("tagTotals")}</h3>
+                        <p className="text-xs text-muted-foreground">{t("tagTotalsHint")}</p>
+                    </div>
+                    <ul className="divide-y rounded-2xl border bg-card">
+                        {tagTotals.map(({ tag, cents }) => (
+                            <li key={tagKey(tag)} className="flex items-center justify-between px-4 py-3 text-base">
+                                <span>{tagLabel(tag, t)}</span>
+                                <span className="font-semibold tabular-nums">{formatMoney(cents / 100)}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             <WhoAteWhat data={data} />
 

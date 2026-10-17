@@ -106,6 +106,8 @@ export interface BillResult {
     total: number;
     /** What each friend consumed (their share of the item nets). */
     consumed: Record<string, number>;
+    /** Per item, its net price plus its proportional part of the bill discount, service charge and VAT, in cents. */
+    itemTotals: Record<string, number>;
     /** Per item, what each sharer consumed of it, in cents. */
     itemShares: Record<string, Record<string, number>>;
     /** What each friend owes for this bill: consumed plus their part of service/VAT, minus their part of the bill discount. */
@@ -147,6 +149,7 @@ export function computeBill(bill: CalcBill, friendIds: string[]): BillResult {
     const total = afterDiscount + service + vat;
 
     const shares = allocate(total, consumed);
+    const itemTotals = allocate(total, itemNets);
 
     // Payers: typed amounts are kept, the others split what is left equally.
     const payers = bill.payers.filter((p) => known.has(p.id));
@@ -171,6 +174,7 @@ export function computeBill(bill: CalcBill, friendIds: string[]): BillResult {
         total,
         consumed,
         itemShares,
+        itemTotals,
         shares,
         paid,
         payersMismatch,

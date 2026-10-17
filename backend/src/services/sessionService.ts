@@ -24,6 +24,7 @@ const toState = (doc: any): SessionState => ({
             name: i.name,
             price: i.price,
             ...(i.discount ? { discount: { type: i.discount.type, value: i.discount.value } } : {}),
+            ...(i.tags?.length ? { tags: [...i.tags] } : {}),
             assignedTo: [...(i.assignedTo ?? [])],
         })),
         ...(b.discount ? { discount: { type: b.discount.type, value: b.discount.value } } : {}),

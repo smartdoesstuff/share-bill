@@ -10,7 +10,7 @@ import {
     settlementKey,
     toCents,
 } from '../lib/calc';
-import { MAX_BILLS, MAX_FRIENDS, MAX_ITEMS, sessionIdSchema } from '../lib/schemas';
+import { MAX_BILLS, MAX_FRIENDS, MAX_ITEMS, MAX_TAGS_PER_ITEM, sessionIdSchema } from '../lib/schemas';
 import {
     DomainError,
     SessionDraft,
@@ -68,6 +68,17 @@ function findItem(bill: DraftBill, ref: string) {
             : `More than one item is named "${ref}"; use the item id instead.`
     );
 }
+
+/** Trimmed, de-duplicated (case-insensitive) tags; presets are food, drink, alcohol, dessert, other. */
+const cleanTags = (tags?: string[]): string[] => {
+    const seen = new Set<string>();
+    return (tags ?? [])
+        .map((t) => t.trim().slice(0, 30))
+        .filter((t) => t && !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()))
+        .slice(0, MAX_TAGS_PER_ITEM);
+};
+
+const hasTag = (item: { tags?: string[] }, tag: string) => (item.tags ?? []).some((t) => norm(t) === norm(tag));
 
 const sharersOf = (draft: Draft, sharedWith?: string[]) =>
     Array.from(new Set((sharedWith?.length ? sharedWith.map((r) => findFriend(draft, r)) : draft.friends).map((f) => f.id)));
@@ -132,7 +143,9 @@ function describe(state: SessionState) {
                 name: i.name,
                 price: i.price,
                 discount: i.discount,
+                tags: i.tags ?? [],
                 netPrice: fromCents(r.itemNets[i.id] ?? 0),
+                totalWithExtras: fromCents(r.itemTotals[i.id] ?? 0),
                 sharedWith: i.assignedTo.length ? i.assignedTo.map(nameOf) : state.friends.map((f) => f.name),
             })),
             discount: bill.discount,
@@ -150,6 +163,13 @@ function describe(state: SessionState) {
         };
     });
 
+    // Spend per tag (an item with several tags counts in each), including its share of discount, service charge and VAT.
+    const tagCents: Record<string, number> = {};
+    state.bills.forEach((bill) => {
+        const r = computeBill(bill, ids);
+        bill.items.forEach((i) => (i.tags ?? []).forEach((tag) => (tagCents[tag] = (tagCents[tag] ?? 0) + (r.itemTotals[i.id] ?? 0))));
+    });
+
     return {
         sessionId: state.sessionId,
         url: appUrl(state.sessionId),
@@ -161,6 +181,7 @@ function describe(state: SessionState) {
         })),
         bills,
         totalSpent: round2(bills.reduce((sum, b) => sum + b.total, 0)),
+        tagTotals: Object.entries(tagCents).map(([tag, cents]) => ({ tag, total: fromCents(cents) })),
         settlements,
     };
 }
@@ -213,6 +234,11 @@ const itemInput = z.object({
     name: z.string().trim().min(1).max(120),
     price: z.number().min(0).max(10_000_000).describe('Price of the item before any discount'),
     discount: adjustmentInput.optional().describe('Discount on this item only'),
+    tags: z
+        .array(z.string().min(1))
+        .max(MAX_TAGS_PER_ITEM)
+        .optional()
+        .describe('Labels such as food, drink, alcohol, dessert, other, or your own. Used for filtering and for assign_by_tag.'),
     sharedWith,
 });
 
@@ -382,6 +408,7 @@ export function createMcpServer(): McpServer {
         name: input.name,
         price: round2(input.price),
         ...(toAdjustment(input.discount) ? { discount: toAdjustment(input.discount) } : {}),
+        ...(cleanTags(input.tags).length ? { tags: cleanTags(input.tags) } : {}),
         assignedTo: sharersOf(draft, input.sharedWith),
     });
 
@@ -536,6 +563,7 @@ export function createMcpServer(): McpServer {
                 name: z.string().trim().min(1).max(120).optional(),
                 price: z.number().min(0).max(10_000_000).optional(),
                 discount: adjustmentInput.optional(),
+                tags: z.array(z.string().min(1)).max(MAX_TAGS_PER_ITEM).optional().describe('Replaces the item\'s tags; an empty list clears them'),
                 sharedWith,
             },
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -548,6 +576,7 @@ export function createMcpServer(): McpServer {
                 name?: string;
                 price?: number;
                 discount?: AdjArg;
+                tags?: string[];
                 sharedWith?: string[];
             }) => {
                 const { session } = await mutateSession(args.sessionId, (draft) => {
@@ -559,11 +588,42 @@ export function createMcpServer(): McpServer {
                         if (adj) item.discount = adj;
                         else delete item.discount;
                     }
+                    if (args.tags !== undefined) {
+                        const tags = cleanTags(args.tags);
+                        if (tags.length) item.tags = tags;
+                        else delete item.tags;
+                    }
                     if (args.sharedWith !== undefined) item.assignedTo = sharersOf(draft, args.sharedWith);
                 });
                 return describe(session);
             }
         )
+    );
+
+    server.registerTool(
+        'assign_by_tag',
+        {
+            title: 'Choose who shares every item with a tag',
+            description:
+                'Sets the people sharing all items that carry a tag, e.g. everything tagged "alcohol" is shared only by the friends who drink. Works across all bills, or one bill if given.',
+            inputSchema: {
+                sessionId,
+                tag: z.string().min(1).describe('Tag to match (case-insensitive)'),
+                sharedWith: z.array(z.string().min(1)).min(1).describe('Names of the friends who share these items'),
+                bill: billRef.optional().describe('Limit to one bill'),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        },
+        guarded(async (args: { sessionId: string; tag: string; sharedWith: string[]; bill?: string }) => {
+            const { session } = await mutateSession(args.sessionId, (draft) => {
+                const sharers = sharersOf(draft, args.sharedWith);
+                const bills = args.bill ? [findBill(draft, args.bill)] : draft.bills;
+                const items = bills.flatMap((b) => b.items).filter((i) => hasTag(i, args.tag));
+                if (items.length === 0) throw new DomainError(`No item has the tag "${args.tag}".`);
+                items.forEach((i) => (i.assignedTo = [...sharers]));
+            });
+            return describe(session);
+        })
     );
 
     server.registerTool(

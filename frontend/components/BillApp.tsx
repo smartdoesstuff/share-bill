@@ -16,6 +16,7 @@ import { useSession } from "../hooks/use-session";
 import { computeBill, isItemAssigned } from "../lib/calc";
 import { MessageKey, useI18n } from "../lib/i18n";
 import { rememberLastSession } from "../lib/last-session";
+import { ItemFilter, NO_FILTER } from "../lib/filter";
 
 /** Why the user can't leave each step yet (null = free to continue). */
 function blockers(data: ReturnType<typeof useSession>["data"]): (MessageKey | null)[] {
@@ -52,6 +53,7 @@ export function BillApp({ sessionId }: { sessionId: string }) {
     const [requestedStep, setRequestedStep] = useState<number | null>(null);
     const { data, status, saveState, update, reload, retrySave } = useSession(sessionId);
     const didPickInitialStep = useRef(false);
+    const [filter, setFilter] = useState<ItemFilter>(NO_FILTER);
 
     // Step comes from the URL so the browser back button walks through the steps.
     useEffect(() => {
@@ -133,8 +135,8 @@ export function BillApp({ sessionId }: { sessionId: string }) {
                 {status === "ready" && (
                     <>
                         {step === 0 && <FriendsStep data={data} update={update} />}
-                        {step === 1 && <BillsStep data={data} update={update} />}
-                        {step === 2 && <SplitStep data={data} update={update} />}
+                        {step === 1 && <BillsStep data={data} update={update} filter={filter} onFilterChange={setFilter} />}
+                        {step === 2 && <SplitStep data={data} update={update} filter={filter} onFilterChange={setFilter} />}
                         {step === 3 && <SummaryStep data={data} update={update} sessionId={sessionId} />}
                     </>
                 )}

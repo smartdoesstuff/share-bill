@@ -37,7 +37,9 @@ The same backend exposes the bill as [Model Context Protocol](https://modelconte
 
 A session holds **friends** and **bills**. A bill is one receipt: items (each with an optional discount and the people sharing it), an optional discount on the whole bill, service charge %, VAT %, and who paid (one person, or several each with an amount, or equal shares). Discounts, service charge and VAT are split in proportion to what each person consumed: item price - item discount, minus bill discount, plus service charge, plus VAT on both.
 
-Tools: `create_session`, `get_session`, `get_summary`, `add_friends`, `update_friend`, `remove_friend`, `add_bill`, `update_bill`, `remove_bill`, `add_items`, `update_item`, `remove_item`, `set_transfer_done`. Friends, bills and items are referenced by name, so a model never has to juggle ids. Tools return the link (`APP_BASE_URL/?sessionId=…`) so you can open the bill in the app.
+Tools: `create_session`, `get_session`, `get_summary`, `add_friends`, `update_friend`, `remove_friend`, `add_bill`, `update_bill`, `remove_bill`, `add_items`, `update_item`, `remove_item`, `assign_by_tag`, `set_transfer_done`. Friends, bills and items are referenced by name, so a model never has to juggle ids. Tools return the link (`APP_BASE_URL/?sessionId=…`) so you can open the bill in the app.
+
+Items can carry **tags** (presets: food, drink, alcohol, dessert, other, or your own, up to 5 per item). The app filters the item lists by tag, by person, or by items nobody has been chosen for, lets you choose who shares every visible item in one tap, and shows spend per tag; `assign_by_tag` does the same bulk assignment over MCP.
 
 Sessions saved before bills existed (flat `orders`) are converted on read: each old order becomes a one-item bill.
 

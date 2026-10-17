@@ -20,6 +20,8 @@ export interface Item {
     price: number;
     /** Discount on this item only. */
     discount?: Adjustment;
+    /** Labels for filtering and grouping: presets (see lib/tags) or anything the user typed. */
+    tags?: string[];
     /** Friends who share this item. */
     assignedTo: string[];
 }

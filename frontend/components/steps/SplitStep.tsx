@@ -7,13 +7,19 @@ import { Button } from "../ui/button";
 import { computeBill, isItemAssigned } from "../../lib/calc";
 import { useI18n } from "../../lib/i18n";
 import { Bill, Item } from "../../types";
+import { FilterBar } from "../FilterBar";
 import { StepHeader } from "./StepHeader";
-import { StepProps } from "./types";
+import { FilterProps, StepProps } from "./types";
+import { isFilterActive, visibleItems } from "../../lib/filter";
+import { tagLabel } from "../../lib/tags";
 
-export function SplitStep({ data, update }: StepProps) {
+export function SplitStep({ data, update, filter, onFilterChange }: StepProps & FilterProps) {
     const { t, formatMoney } = useI18n();
     const allIds = data.friends.map((f) => f.id);
+    const filtered = isFilterActive(filter);
     const billsWithItems = data.bills.filter((b) => b.items.length > 0);
+    const itemCount = billsWithItems.reduce((n, b) => n + b.items.length, 0);
+    const shown = billsWithItems.flatMap((b) => visibleItems(b, filter, data.friends).map((item) => ({ billId: b.id, item })));
     const unassigned = billsWithItems.reduce((n, b) => n + b.items.filter((i) => !isItemAssigned(i, data.friends)).length, 0);
 
     // What each person pays in total across all bills, including their part of discounts, service charge and VAT.
@@ -35,6 +41,24 @@ export function SplitStep({ data, update }: StepProps) {
             ),
         }));
 
+    // Bulk: add or remove one person on every item currently shown, in one tap.
+    const everyShown = (friendId: string) => shown.length > 0 && shown.every(({ item }) => item.assignedTo.includes(friendId));
+    const toggleBulk = (friendId: string) => {
+        const remove = everyShown(friendId);
+        const keys = new Set(shown.map(({ billId, item }) => `${billId}/${item.id}`));
+        update((cur) => ({
+            ...cur,
+            bills: cur.bills.map((b) => ({
+                ...b,
+                items: b.items.map((i) => {
+                    if (!keys.has(`${b.id}/${i.id}`)) return i;
+                    const without = i.assignedTo.filter((id) => id !== friendId);
+                    return { ...i, assignedTo: remove ? without : [...without, friendId] };
+                }),
+            })),
+        }));
+    };
+
     const toggle = (billId: string, item: Item, friendId: string) =>
         setAssigned(
             billId,
@@ -48,6 +72,26 @@ export function SplitStep({ data, update }: StepProps) {
         <section className="space-y-5">
             <StepHeader step={3} total={4} title={t("splitTitle")} hint={t("splitHint")} />
 
+            <FilterBar data={data} filter={filter} onChange={onFilterChange} shown={shown.length} total={itemCount} />
+
+            {filtered && shown.length > 0 && (
+                <div className="space-y-2 rounded-2xl border border-primary/40 bg-primary/5 p-4">
+                    <p className="text-sm font-semibold">{t("bulkTitle", { count: shown.length })}</p>
+                    <p className="text-xs text-muted-foreground">{t("bulkHint")}</p>
+                    <div className="flex flex-wrap gap-2">
+                        {data.friends.map((friend) => (
+                            <Chip key={friend.id} selected={everyShown(friend.id)} onClick={() => toggleBulk(friend.id)}>
+                                {friend.name}
+                            </Chip>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {filtered && shown.length === 0 && (
+                <p className="rounded-2xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">{t("noItemsMatch")}</p>
+            )}
+
             {unassigned > 0 && (
                 <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
                     {t("unassignedCount", { count: unassigned })}
@@ -56,11 +100,13 @@ export function SplitStep({ data, update }: StepProps) {
 
             {billsWithItems.map((bill) => {
                 const result = computeBill(bill, allIds);
+                const items = visibleItems(bill, filter, data.friends);
+                if (items.length === 0) return null;
                 return (
                     <div key={bill.id} className="space-y-2">
                         <h3 className="text-base font-semibold">{titleOf(bill)}</h3>
                         <ul className="space-y-3">
-                            {bill.items.map((item) => {
+                            {items.map((item) => {
                                 const sharers = item.assignedTo.filter((id) => allIds.includes(id));
                                 const everyone = sharers.length === allIds.length;
                                 const net = (result.itemNets[item.id] ?? 0) / 100;
@@ -69,6 +115,9 @@ export function SplitStep({ data, update }: StepProps) {
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0">
                                                 <p className="truncate text-base font-medium">{item.name}</p>
+                                                {(item.tags ?? []).length > 0 && (
+                                                    <p className="text-xs text-muted-foreground">{(item.tags ?? []).map((tag) => tagLabel(tag, t)).join(" · ")}</p>
+                                                )}
                                                 <p className="text-sm text-muted-foreground">
                                                     {sharers.length > 0
                                                         ? t("perPerson", { amount: formatMoney(net / sharers.length) })

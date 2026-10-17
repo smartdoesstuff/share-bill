@@ -7,17 +7,21 @@ import { Button } from "../ui/button";
 import { BillCard } from "../bills/BillCard";
 import { EmptyState } from "../EmptyState";
 import { StepHeader } from "./StepHeader";
-import { StepProps } from "./types";
+import { FilterBar } from "../FilterBar";
+import { FilterProps, StepProps } from "./types";
+import { isFilterActive, visibleItems } from "../../lib/filter";
 import { computeBill } from "../../lib/calc";
 import { generateId } from "../../lib/id";
 import { useI18n } from "../../lib/i18n";
 import { Bill } from "../../types";
 
-export function BillsStep({ data, update }: StepProps) {
+export function BillsStep({ data, update, filter, onFilterChange }: StepProps & FilterProps) {
     const { t, formatMoney } = useI18n();
     const [openId, setOpenId] = useState<string | null>(data.bills.length === 1 ? data.bills[0].id : null);
     const ids = data.friends.map((f) => f.id);
     const total = data.bills.reduce((sum, b) => sum + computeBill(b, ids).total, 0);
+    const itemCount = data.bills.reduce((n, b) => n + b.items.length, 0);
+    const shownCount = data.bills.reduce((n, b) => n + visibleItems(b, filter, data.friends).length, 0);
 
     const addBill = () => {
         const bill: Bill = { id: generateId(), name: "", items: [], payers: [] };
@@ -40,11 +44,15 @@ export function BillsStep({ data, update }: StepProps) {
         <section className="space-y-5">
             <StepHeader step={2} total={4} title={t("ordersTitle")} hint={t("ordersHint")} />
 
+            <FilterBar data={data} filter={filter} onChange={onFilterChange} shown={shownCount} total={itemCount} />
+
             {data.bills.length === 0 ? (
                 <EmptyState>{t("noBills")}</EmptyState>
             ) : (
                 <ul className="space-y-3">
-                    {data.bills.map((bill, index) => (
+                    {data.bills.map((bill, index) =>
+                        // With a filter on, hide bills that have items but none of them match.
+                        isFilterActive(filter) && bill.items.length > 0 && visibleItems(bill, filter, data.friends).length === 0 ? null : (
                         <BillCard
                             key={bill.id}
                             bill={bill}
@@ -54,8 +62,10 @@ export function BillsStep({ data, update }: StepProps) {
                             onToggle={() => setOpenId(openId === bill.id ? null : bill.id)}
                             onChange={(fn) => changeBill(bill.id, fn)}
                             onDelete={() => deleteBill(bill, index)}
+                            filter={filter}
                         />
-                    ))}
+                        )
+                    )}
                 </ul>
             )}
 

@@ -9,6 +9,8 @@ import { AdjustmentInput } from "./AdjustmentInput";
 import { ItemDraft, ItemForm } from "./ItemForm";
 import { PayersPicker } from "./PayersPicker";
 import { computeBill } from "../../lib/calc";
+import { ItemFilter, isFilterActive, visibleItems } from "../../lib/filter";
+import { tagLabel } from "../../lib/tags";
 import { generateId } from "../../lib/id";
 import { cn } from "../../lib/utils";
 import { useI18n } from "../../lib/i18n";
@@ -23,6 +25,7 @@ interface BillCardProps {
     onToggle: () => void;
     onChange: (fn: (bill: Bill) => Bill) => void;
     onDelete: () => void;
+    filter: ItemFilter;
 }
 
 const sharersLabel = (item: Item, friends: Friend[], t: ReturnType<typeof useI18n>["t"]) => {
@@ -32,7 +35,7 @@ const sharersLabel = (item: Item, friends: Friend[], t: ReturnType<typeof useI18
     return names.join(", ");
 };
 
-export function BillCard({ bill, index, friends, open, onToggle, onChange, onDelete }: BillCardProps) {
+export function BillCard({ bill, index, friends, open, onToggle, onChange, onDelete, filter }: BillCardProps) {
     const { t, formatMoney } = useI18n();
     const [showAdd, setShowAdd] = useState(bill.items.length === 0);
     const [showExtras, setShowExtras] = useState(
@@ -42,6 +45,8 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
 
     const result = useMemo(() => computeBill(bill, friends.map((f) => f.id)), [bill, friends]);
     const title = bill.name.trim() || t("billN", { n: index + 1 });
+    const filtered = isFilterActive(filter);
+    const shownItems = visibleItems(bill, filter, friends);
     const nameOf = (id: string) => friends.find((f) => f.id === id)?.name ?? t("unknownPerson");
     const payerIds = bill.payers.filter((p) => friends.some((f) => f.id === p.id)).map((p) => p.id);
 
@@ -55,6 +60,7 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
                     name: draft.name,
                     price: draft.price,
                     ...(draft.discount ? { discount: draft.discount } : {}),
+                    ...(draft.tags.length ? { tags: draft.tags } : {}),
                     // Most items are shared by everyone: the next step lets the user narrow it down.
                     assignedTo: friends.map((f) => f.id),
                 },
@@ -66,8 +72,14 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
             ...b,
             items: b.items.map((i) => {
                 if (i.id !== id) return i;
-                const { discount: _old, ...rest } = i;
-                return { ...rest, name: draft.name, price: draft.price, ...(draft.discount ? { discount: draft.discount } : {}) };
+                const { discount: _old, tags: _oldTags, ...rest } = i;
+                return {
+                    ...rest,
+                    name: draft.name,
+                    price: draft.price,
+                    ...(draft.discount ? { discount: draft.discount } : {}),
+                    ...(draft.tags.length ? { tags: draft.tags } : {}),
+                };
             }),
         }));
         setEditingId(null);
@@ -136,7 +148,7 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
                     <section className="space-y-2">
                         <div className="flex items-center justify-between">
                             <h3 className="text-sm font-semibold">
-                                {t("itemsTitle")} ({bill.items.length})
+                                {t("itemsTitle")} ({filtered ? `${shownItems.length}/${bill.items.length}` : bill.items.length})
                             </h3>
                             <button
                                 type="button"
@@ -156,18 +168,18 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
 
                         {showAdd && <ItemForm idPrefix={`${bill.id}-new`} submitLabel={t("addItem")} onSubmit={addItem} />}
 
-                        {bill.items.length === 0 ? (
+                        {shownItems.length === 0 ? (
                             <p className="rounded-xl border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-                                {t("noItems")}
+                                {filtered && bill.items.length > 0 ? t("noItemsMatch") : t("noItems")}
                             </p>
                         ) : (
                             <ul className="divide-y rounded-xl border">
-                                {bill.items.map((item) =>
+                                {shownItems.map((item) =>
                                     editingId === item.id ? (
                                         <li key={item.id} className="p-2">
                                             <ItemForm
                                                 idPrefix={`${item.id}-edit`}
-                                                initial={{ name: item.name, price: item.price, discount: item.discount }}
+                                                initial={{ name: item.name, price: item.price, discount: item.discount, tags: item.tags ?? [] }}
                                                 submitLabel={t("saveItem")}
                                                 onSubmit={(draft) => saveItem(item.id, draft)}
                                                 onCancel={() => setEditingId(null)}
@@ -188,6 +200,15 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
                                                     )}
                                                     {sharersLabel(item, friends, t)}
                                                 </p>
+                                                {(item.tags ?? []).length > 0 && (
+                                                    <p className="mt-1 flex flex-wrap gap-1">
+                                                        {(item.tags ?? []).map((tag) => (
+                                                            <span key={tag} className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                                                                {tagLabel(tag, t)}
+                                                            </span>
+                                                        ))}
+                                                    </p>
+                                                )}
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-base font-medium tabular-nums">

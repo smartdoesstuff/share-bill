@@ -30,7 +30,7 @@ test('exposes the expected tools with annotations', async () => {
     assert.deepEqual(
         tools.map((t) => t.name).sort(),
         [
-            'add_bill', 'add_friends', 'add_items', 'create_session', 'get_session', 'get_summary', 'remove_bill',
+            'add_bill', 'add_friends', 'add_items', 'assign_by_tag', 'create_session', 'get_session', 'get_summary', 'remove_bill',
             'remove_friend', 'remove_item', 'set_transfer_done', 'update_bill', 'update_friend', 'update_item',
         ]
     );
@@ -159,4 +159,38 @@ test('create_session stores nothing until something is added', async () => {
     assert.equal(store.size, 0);
     await call('add_friends', { sessionId: data!.sessionId, friends: [{ name: 'Ann' }] });
     assert.equal(store.size, 1);
+});
+
+test('tags: set on items, assign sharers by tag, spend per tag', async () => {
+    const { call, start } = await connect();
+    const sessionId = await start();
+    await call('add_bill', {
+        sessionId,
+        name: 'Bar',
+        items: [
+            { name: 'Beer', price: 200, tags: ['alcohol', 'Drink', 'drink'] },
+            { name: 'Wine', price: 300, tags: ['alcohol'] },
+            { name: 'Fries', price: 100, tags: ['food'] },
+        ],
+        vatPercent: 10,
+        paidBy: 'Ann',
+    });
+
+    const res = await call('assign_by_tag', { sessionId, tag: 'ALCOHOL', sharedWith: ['Bob', 'Cat'] });
+    const items = (res.data!.bills as any[])[0].items;
+    assert.deepEqual(items[0].tags, ['alcohol', 'Drink']);
+    assert.deepEqual(items[0].sharedWith, ['Bob', 'Cat']);
+    assert.deepEqual(items[1].sharedWith, ['Bob', 'Cat']);
+    assert.deepEqual(items[2].sharedWith, ['Ann', 'Bob', 'Cat']);
+
+    // 10% VAT is spread over items: alcohol = (200 + 300) * 1.1
+    const totals = Object.fromEntries((res.data!.tagTotals as any[]).map((t) => [t.tag, t.total]));
+    assert.equal(totals.alcohol, 550);
+    assert.equal(totals.food, 110);
+
+    const none = await call('assign_by_tag', { sessionId, tag: 'dessert', sharedWith: ['Ann'] });
+    assert.equal(none.isError, true);
+
+    const cleared = await call('update_item', { sessionId, bill: 'Bar', item: 'Fries', tags: [] });
+    assert.deepEqual((cleared.data!.bills as any[])[0].items[2].tags, []);
 });

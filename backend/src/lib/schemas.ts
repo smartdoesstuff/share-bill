@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const MAX_FRIENDS = 50;
 export const MAX_BILLS = 100;
 export const MAX_ITEMS = 200;
+export const MAX_TAGS_PER_ITEM = 5;
 
 export const sessionIdSchema = z
     .string()
@@ -32,6 +33,8 @@ export const itemSchema = z.object({
     name: z.string().trim().min(1).max(120),
     price: money,
     discount: adjustmentSchema.optional(),
+    /** Free labels for filtering: presets are food, drink, alcohol, dessert, other; anything else is a custom tag. */
+    tags: z.array(z.string().trim().min(1).max(30)).max(MAX_TAGS_PER_ITEM).optional(),
     assignedTo: z.array(z.string().min(1).max(64)).max(MAX_FRIENDS),
 });
 
