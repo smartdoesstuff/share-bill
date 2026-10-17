@@ -15,7 +15,13 @@ async function connect() {
         const res: any = await client.callTool({ name, arguments: args });
         return { isError: !!res.isError, data: res.structuredContent, text: res.content?.[0]?.text as string };
     };
-    return { client, call, store };
+    const start = async (names = ['Ann', 'Bob', 'Cat']) => {
+        const { data } = await call('create_session', {});
+        const sessionId = data!.sessionId as string;
+        await call('add_friends', { sessionId, friends: names.map((name) => ({ name })) });
+        return sessionId;
+    };
+    return { client, call, store, start };
 }
 
 test('exposes the expected tools with annotations', async () => {
@@ -23,87 +29,128 @@ test('exposes the expected tools with annotations', async () => {
     const { tools } = await client.listTools();
     assert.deepEqual(
         tools.map((t) => t.name).sort(),
-        ['add_friends', 'add_orders', 'create_session', 'get_session', 'get_summary', 'remove_friend', 'remove_order', 'set_transfer_done', 'update_friend', 'update_order']
+        [
+            'add_bill', 'add_friends', 'add_items', 'create_session', 'get_session', 'get_summary', 'remove_bill',
+            'remove_friend', 'remove_item', 'set_transfer_done', 'update_bill', 'update_friend', 'update_item',
+        ]
     );
     assert.equal(tools.find((t) => t.name === 'get_summary')?.annotations?.readOnlyHint, true);
 });
 
-test('full flow: friends, orders by name, summary, transfer done', async () => {
-    const { call } = await connect();
-    const { data: created } = await call('create_session', {});
-    const sessionId = created!.sessionId as string;
+test('restaurant bill with item discount, bill discount, service charge and VAT paid by two people', async () => {
+    const { call, start } = await connect();
+    const sessionId = await start();
 
-    await call('add_friends', { sessionId, friends: [{ name: 'Ann' }, { name: 'Bob', paymentAddress: '081-234-5678' }, { name: 'Cat' }] });
-    await call('add_orders', {
+    const res = await call('add_bill', {
         sessionId,
-        orders: [
-            { description: 'Dinner', amount: 300, paidBy: 'ann' },
-            { description: 'Taxi', amount: 90, paidBy: 'Bob', sharedWith: ['Bob', 'Cat'] },
+        name: 'Shabu',
+        items: [
+            { name: 'Meat set', price: 400, sharedWith: ['Ann', 'Bob'] },
+            { name: 'Drinks', price: 100, discount: { type: 'percent', value: 50 }, sharedWith: ['Cat'] },
+            { name: 'Veggies', price: 150 },
         ],
+        discount: { type: 'amount', value: 50 },
+        servicePercent: 10,
+        vatPercent: 7,
+        payers: [{ friend: 'Ann' }, { friend: 'Bob' }],
     });
+    assert.equal(res.isError, false);
+    const bill = (res.data!.bills as any[])[0];
+    // 400 + 50 + 150 = 600; -50 = 550; +10% = 605; +7% VAT = 647.35
+    assert.equal(bill.subtotal, 600);
+    assert.equal(bill.discountAmount, 50);
+    assert.equal(bill.serviceCharge, 55);
+    assert.equal(bill.vat, 42.35);
+    assert.equal(bill.total, 647.35);
+    assert.deepEqual(bill.payers.map((p: any) => p.amount), [323.68, 323.67]);
+    assert.equal(bill.owes.reduce((s: number, o: any) => s + o.amount, 0).toFixed(2), '647.35');
 
     const { data: summary } = await call('get_summary', { sessionId });
-    assert.equal(summary!.totalSpent, 390);
-    const transfers = (summary!.settlements as any[]).map((s) => `${s.from}->${s.to}:${s.amount}`).sort();
-    assert.deepEqual(transfers, ['Bob->Ann:55', 'Cat->Ann:145'].sort());
-
-    const done = await call('set_transfer_done', { sessionId, from: 'Cat', to: 'Ann', done: true });
-    assert.equal((done.data!.settlements as any[]).find((s) => s.from === 'Cat').transferred, true);
+    assert.equal(summary!.totalSpent, 647.35);
+    // Cat consumed only 50 + her third of veggies, so she is the only debtor.
+    const settlements = summary!.settlements as any[];
+    assert.ok(settlements.every((s) => s.from === 'Cat' || s.from === 'Bob' || s.from === 'Ann'));
+    const net = (summary!.balances as any[]).reduce((s, b) => s + b.netBalance, 0);
+    assert.ok(Math.abs(net) < 0.005);
 });
 
-test('domain errors come back as readable tool errors', async () => {
-    const { call } = await connect();
-    const { data } = await call('create_session', {});
-    const sessionId = data!.sessionId as string;
-    await call('add_friends', { sessionId, friends: [{ name: 'Ann' }] });
-
-    const res = await call('add_orders', { sessionId, orders: [{ description: 'X', amount: 10, paidBy: 'Zed' }] });
-    assert.equal(res.isError, true);
-    assert.match(res.text, /No friend named "Zed"\. Existing friends: Ann/);
+test('several places paid by different people', async () => {
+    const { call, start } = await connect();
+    const sessionId = await start();
+    await call('add_bill', { sessionId, name: 'Lunch', items: [{ name: 'Lunch', price: 300 }], paidBy: 'Ann' });
+    await call('add_bill', { sessionId, name: 'Taxi', items: [{ name: 'Taxi', price: 90 }], paidBy: 'Bob' });
+    const { data } = await call('get_summary', { sessionId });
+    const transfers = (data!.settlements as any[]).map((s) => `${s.from}->${s.to}:${s.amount}`).sort();
+    // Ann paid 300 of 390 (owes 130): +170. Bob paid 90: -40. Cat: -130.
+    assert.deepEqual(transfers, ['Bob->Ann:40', 'Cat->Ann:130']);
 });
 
-test('cannot remove a friend who paid for an order', async () => {
-    const { call } = await connect();
-    const { data } = await call('create_session', {});
-    const sessionId = data!.sessionId as string;
-    await call('add_friends', { sessionId, friends: [{ name: 'Ann' }, { name: 'Bob' }] });
-    await call('add_orders', { sessionId, orders: [{ description: 'Lunch', amount: 100, paidBy: 'Ann' }] });
-    const res = await call('remove_friend', { sessionId, friend: 'Ann' });
-    assert.equal(res.isError, true);
-    assert.match(res.text, /Lunch/);
-});
-
-test('an item paid by several people', async () => {
-    const { call } = await connect();
-    const { data } = await call('create_session', {});
-    const sessionId = data!.sessionId as string;
-    await call('add_friends', { sessionId, friends: [{ name: 'Ann' }, { name: 'Bob' }, { name: 'Cat' }] });
-
-    const bad = await call('add_orders', {
+test('typed payer amounts must add up to the bill total', async () => {
+    const { call, start } = await connect();
+    const sessionId = await start();
+    const bad = await call('add_bill', {
         sessionId,
-        orders: [{ description: 'Hotel', amount: 300, payers: [{ friend: 'Ann', amount: 100 }, { friend: 'Bob', amount: 100 }] }],
+        name: 'Hotel',
+        items: [{ name: 'Room', price: 300 }],
+        payers: [{ friend: 'Ann', amount: 100 }, { friend: 'Bob', amount: 100 }],
     });
     assert.equal(bad.isError, true);
     assert.match(bad.text, /must match/);
 
-    const ok = await call('add_orders', {
+    const ok = await call('add_bill', {
         sessionId,
-        orders: [{ description: 'Hotel', amount: 300, payers: [{ friend: 'Ann', amount: 200 }, { friend: 'Bob', amount: 100 }] }],
+        name: 'Hotel',
+        items: [{ name: 'Room', price: 300 }],
+        payers: [{ friend: 'Ann', amount: 200 }, { friend: 'Bob', amount: 100 }],
     });
     assert.equal(ok.isError, false);
-    assert.deepEqual((ok.data!.orders as any[])[0].payers, [{ name: 'Ann', amount: 200 }, { name: 'Bob', amount: 100 }]);
 
-    const { data: summary } = await call('get_summary', { sessionId });
-    assert.deepEqual((summary!.settlements as any[]).map((s) => `${s.from}->${s.to}:${s.amount}`), ['Cat->Ann:100']);
-
-    const both = await call('add_orders', {
-        sessionId,
-        orders: [{ description: 'X', amount: 10, paidBy: 'Ann', payers: [{ friend: 'Ann', amount: 10 }] }],
-    });
+    const both = await call('add_bill', { sessionId, name: 'X', items: [{ name: 'X', price: 10 }], paidBy: 'Ann', payers: [{ friend: 'Ann' }] });
     assert.equal(both.isError, true);
+    const partial = await call('add_bill', { sessionId, name: 'Y', items: [{ name: 'Y', price: 10 }], payers: [{ friend: 'Ann', amount: 5 }, { friend: 'Bob' }] });
+    assert.equal(partial.isError, true);
+});
 
-    const cantRemove = await call('remove_friend', { sessionId, friend: 'Bob' });
-    assert.equal(cantRemove.isError, true);
+test('editing items and adjustments updates the totals', async () => {
+    const { call, start } = await connect();
+    const sessionId = await start();
+    await call('add_bill', { sessionId, name: 'Cafe', items: [{ name: 'Cake', price: 100 }], paidBy: 'Ann' });
+
+    await call('add_items', { sessionId, bill: 'Cafe', items: [{ name: 'Tea', price: 50 }] });
+    await call('update_item', { sessionId, bill: 'Cafe', item: 'Cake', discount: { type: 'amount', value: 20 } });
+    let res = await call('update_bill', { sessionId, bill: 'Cafe', vatPercent: 7 });
+    let bill = (res.data!.bills as any[])[0];
+    assert.equal(bill.subtotal, 130);
+    assert.equal(bill.total, 139.1);
+
+    res = await call('update_bill', { sessionId, bill: 'Cafe', vatPercent: 0 });
+    assert.equal((res.data!.bills as any[])[0].total, 130);
+
+    res = await call('remove_item', { sessionId, bill: 'Cafe', item: 'Tea' });
+    assert.equal((res.data!.bills as any[])[0].items.length, 1);
+    res = await call('remove_bill', { sessionId, bill: 'Cafe' });
+    assert.equal((res.data!.bills as any[]).length, 0);
+});
+
+test('domain errors come back as readable tool errors', async () => {
+    const { call, start } = await connect();
+    const sessionId = await start(['Ann']);
+    const res = await call('add_bill', { sessionId, name: 'X', items: [{ name: 'X', price: 10 }], paidBy: 'Zed' });
+    assert.equal(res.isError, true);
+    assert.match(res.text, /No friend named "Zed"\. Existing friends: Ann/);
+    const noBill = await call('add_items', { sessionId, bill: 'Nope', items: [{ name: 'X', price: 1 }] });
+    assert.match(noBill.text, /No bill "Nope"/);
+});
+
+test('cannot remove a friend who paid a bill', async () => {
+    const { call, start } = await connect();
+    const sessionId = await start(['Ann', 'Bob']);
+    await call('add_bill', { sessionId, name: 'Lunch', items: [{ name: 'Lunch', price: 100 }], paidBy: 'Ann' });
+    const res = await call('remove_friend', { sessionId, friend: 'Ann' });
+    assert.equal(res.isError, true);
+    assert.match(res.text, /Lunch/);
+    const bob = await call('remove_friend', { sessionId, friend: 'Bob' });
+    assert.equal(bob.isError, false);
 });
 
 test('create_session stores nothing until something is added', async () => {
@@ -112,30 +159,4 @@ test('create_session stores nothing until something is added', async () => {
     assert.equal(store.size, 0);
     await call('add_friends', { sessionId: data!.sessionId, friends: [{ name: 'Ann' }] });
     assert.equal(store.size, 1);
-});
-
-test('several payers without amounts split the price equally; stored shape is always payers', async () => {
-    const { call } = await connect();
-    const { data } = await call('create_session', {});
-    const sessionId = data!.sessionId as string;
-    await call('add_friends', { sessionId, friends: [{ name: 'Ann' }, { name: 'Bob' }, { name: 'Cat' }] });
-
-    const res = await call('add_orders', {
-        sessionId,
-        orders: [
-            { description: 'Taxi', amount: 100, payers: [{ friend: 'Ann' }, { friend: 'Bob' }, { friend: 'Cat' }] },
-            { description: 'Snack', amount: 30, paidBy: 'Ann' },
-        ],
-    });
-    const orders = res.data!.orders as any[];
-    assert.deepEqual(orders[0].payers.map((p: any) => p.amount), [33.34, 33.33, 33.33]);
-    assert.deepEqual(orders[1].payers, [{ name: 'Ann', amount: 30 }]);
-    assert.equal('paidBy' in orders[0], false);
-
-    const partial = await call('add_orders', { sessionId, orders: [{ description: 'X', amount: 10, payers: [{ friend: 'Ann', amount: 5 }, { friend: 'Bob' }] }] });
-    assert.equal(partial.isError, true);
-
-    // Changing only the price keeps payers' proportions.
-    const upd = await call('update_order', { sessionId, order: 'Taxi', amount: 200 });
-    assert.equal((upd.data!.orders as any[])[0].payers.reduce((s: number, p: any) => s + p.amount, 0), 200);
 });

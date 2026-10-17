@@ -1,8 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { computeBalances, computeSettlements, fromCents, settlementKey, splitCents, toCents } from '../lib/calc';
-import { MAX_FRIENDS, MAX_ORDERS, sessionIdSchema } from '../lib/schemas';
+import {
+    Adjustment,
+    computeBalances,
+    computeBill,
+    computeSettlements,
+    fromCents,
+    settlementKey,
+    toCents,
+} from '../lib/calc';
+import { MAX_BILLS, MAX_FRIENDS, MAX_ITEMS, sessionIdSchema } from '../lib/schemas';
 import {
     DomainError,
     SessionDraft,
@@ -11,7 +19,10 @@ import {
     mutateSession,
 } from '../services/sessionService';
 
-/** Number of cartoon avatars the web app can draw. */
+type Draft = SessionDraft;
+type DraftBill = Draft['bills'][number];
+
+/** Number of avatar colours the web app can draw. */
 const AVATAR_COUNT = 8;
 
 const appUrl = (sessionId: string): string => {
@@ -20,8 +31,9 @@ const appUrl = (sessionId: string): string => {
 };
 
 const norm = (value: string) => value.trim().toLowerCase();
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function findFriend(draft: SessionDraft, ref: string) {
+function findFriend(draft: Draft, ref: string) {
     const exact = draft.friends.filter((f) => f.id === ref);
     const matches = exact.length ? exact : draft.friends.filter((f) => norm(f.name) === norm(ref));
     if (matches.length === 1) return matches[0];
@@ -33,66 +45,74 @@ function findFriend(draft: SessionDraft, ref: string) {
     );
 }
 
-function findOrder(draft: SessionDraft, ref: string) {
-    const exact = draft.orders.filter((o) => o.id === ref);
-    const matches = exact.length ? exact : draft.orders.filter((o) => norm(o.description) === norm(ref));
+function findBill(draft: Draft, ref: string): DraftBill {
+    const exact = draft.bills.filter((b) => b.id === ref);
+    const matches = exact.length ? exact : draft.bills.filter((b) => b.name && norm(b.name) === norm(ref));
     if (matches.length === 1) return matches[0];
-    const names = draft.orders.map((o) => o.description).join(', ') || '(no orders yet)';
+    const names = draft.bills.map((b) => b.name || b.id).join(', ') || '(no bills yet)';
     throw new DomainError(
         matches.length === 0
-            ? `No order "${ref}". Existing orders: ${names}.`
-            : `More than one order is named "${ref}"; use the order id instead.`
+            ? `No bill "${ref}". Existing bills: ${names}.`
+            : `More than one bill is named "${ref}"; use the bill id instead.`
     );
 }
 
-const personRef = (what: string) => z.string().min(1).describe(`${what}: the friend's name (case-insensitive) or id`);
+function findItem(bill: DraftBill, ref: string) {
+    const exact = bill.items.filter((i) => i.id === ref);
+    const matches = exact.length ? exact : bill.items.filter((i) => norm(i.name) === norm(ref));
+    if (matches.length === 1) return matches[0];
+    const names = bill.items.map((i) => i.name).join(', ') || '(no items yet)';
+    throw new DomainError(
+        matches.length === 0
+            ? `No item "${ref}" in this bill. Items: ${names}.`
+            : `More than one item is named "${ref}"; use the item id instead.`
+    );
+}
+
+const sharersOf = (draft: Draft, sharedWith?: string[]) =>
+    Array.from(new Set((sharedWith?.length ? sharedWith.map((r) => findFriend(draft, r)) : draft.friends).map((f) => f.id)));
+
+const billTotal = (draft: Draft, bill: DraftBill) =>
+    computeBill(bill, draft.friends.map((f) => f.id)).total;
 
 /**
- * Works out who paid an order and returns the stored shape: always a list of payers.
- *  - `paidBy`: one person paid everything.
- *  - `payers`: several people; give each `amount`, or omit every amount to split equally.
+ * Stored shape of "who paid": `paidBy` = one person paid the whole bill; `payers` = several people,
+ * each with an amount (must add up to the bill total) or none to split the total equally.
  */
 function resolvePayers(
-    draft: SessionDraft,
-    amount: number,
+    draft: Draft,
+    bill: DraftBill,
     paidBy: string | undefined,
     payers: { friend: string; amount?: number }[] | undefined
-): { id: string; amount: number }[] {
+): DraftBill['payers'] {
     if (paidBy && payers?.length) throw new DomainError('Give either paidBy or payers, not both.');
     if (!paidBy && !payers?.length) throw new DomainError('Say who paid: paidBy for one person, or payers for several.');
-    const total = Math.round(amount * 100) / 100;
-    if (paidBy) return [{ id: findFriend(draft, paidBy).id, amount: total }];
+    if (paidBy) return [{ id: findFriend(draft, paidBy).id }];
 
     const friends = payers!.map((p) => findFriend(draft, p.friend));
     if (new Set(friends.map((f) => f.id)).size !== friends.length) {
         throw new DomainError('Each friend may appear only once in payers.');
     }
-
     const given = payers!.filter((p) => p.amount !== undefined).length;
-    if (given === 0) {
-        return splitCents(toCents(total), friends.length).map((cents, i) => ({ id: friends[i].id, amount: fromCents(cents) }));
+    if (given !== 0 && given !== payers!.length) {
+        throw new DomainError('Give an amount for every payer, or for none to split equally.');
     }
-    if (given !== payers!.length) throw new DomainError('Give an amount for every payer, or for none to split equally.');
-
-    const resolved = payers!.map((p, i) => ({ id: friends[i].id, amount: Math.round(p.amount! * 100) / 100 }));
-    const paidCents = resolved.reduce((sum, p) => sum + toCents(p.amount), 0);
-    if (paidCents !== toCents(total)) {
-        throw new DomainError(`payers add up to ${fromCents(paidCents)} but the order amount is ${total}; they must match.`);
+    const result = payers!.map((p, i) => ({ id: friends[i].id, ...(p.amount !== undefined ? { amount: round2(p.amount) } : {}) }));
+    if (given > 0) {
+        const total = billTotal(draft, { ...bill, payers: result });
+        const paid = result.reduce((sum, p) => sum + toCents(p.amount!), 0);
+        if (paid !== total) {
+            throw new DomainError(`payers add up to ${fromCents(paid)} but the bill total is ${fromCents(total)}; they must match.`);
+        }
     }
-    return resolved;
+    return result;
 }
-
-const payersInput = z
-    .array(z.object({ friend: personRef('Who paid this part'), amount: z.number().positive().max(10_000_000).optional() }))
-    .min(1)
-    .max(MAX_FRIENDS)
-    .optional()
-    .describe('Use instead of paidBy when several people paid the same item. Give each amount (must add up to the total), or omit all amounts to split equally.');
 
 /** Human/LLM friendly snapshot with ids resolved to names. */
 function describe(state: SessionState) {
+    const ids = state.friends.map((f) => f.id);
     const nameOf = (id: string) => state.friends.find((f) => f.id === id)?.name ?? '(removed)';
-    const balances = computeBalances(state.friends, state.orders);
+    const balances = computeBalances(state.friends, state.bills);
     const paid = new Set(state.paidDebts);
     const settlements = computeSettlements(balances).map((s) => ({
         from: nameOf(s.from),
@@ -101,6 +121,34 @@ function describe(state: SessionState) {
         transferred: paid.has(s.key),
         toPaymentAddress: state.friends.find((f) => f.id === s.to)?.paymentAddress,
     }));
+
+    const bills = state.bills.map((bill) => {
+        const r = computeBill(bill, ids);
+        return {
+            id: bill.id,
+            name: bill.name,
+            items: bill.items.map((i) => ({
+                id: i.id,
+                name: i.name,
+                price: i.price,
+                discount: i.discount,
+                netPrice: fromCents(r.itemNets[i.id] ?? 0),
+                sharedWith: i.assignedTo.length ? i.assignedTo.map(nameOf) : state.friends.map((f) => f.name),
+            })),
+            discount: bill.discount,
+            servicePercent: bill.servicePercent,
+            vatPercent: bill.vatPercent,
+            subtotal: fromCents(r.subtotal),
+            discountAmount: fromCents(r.discount),
+            serviceCharge: fromCents(r.service),
+            vat: fromCents(r.vat),
+            total: fromCents(r.total),
+            payers: Object.entries(r.paid).map(([id, cents]) => ({ name: nameOf(id), amount: fromCents(cents) })),
+            owes: ids.map((id) => ({ name: nameOf(id), amount: fromCents(r.shares[id] ?? 0) })).filter((o) => o.amount > 0),
+            needsPayer: bill.payers.length === 0,
+            payersMismatch: r.payersMismatch,
+        };
+    });
 
     return {
         sessionId: state.sessionId,
@@ -111,14 +159,8 @@ function describe(state: SessionState) {
             paymentAddress: f.paymentAddress,
             netBalance: fromCents(balances[f.id] ?? 0), // + is owed to them, - they owe
         })),
-        orders: state.orders.map((o) => ({
-            id: o.id,
-            description: o.description,
-            amount: o.amount,
-            payers: o.payers.map((p) => ({ name: nameOf(p.id), amount: p.amount })),
-            sharedWith: o.assignedTo.map(nameOf),
-        })),
-        totalSpent: fromCents(state.orders.reduce((sum, o) => sum + Math.round(o.amount * 100), 0)),
+        bills,
+        totalSpent: round2(bills.reduce((sum, b) => sum + b.total, 0)),
         settlements,
     };
 }
@@ -149,16 +191,53 @@ const guarded =
 const sessionId = sessionIdSchema.describe(
     'The bill session id (the "sessionId" query parameter of the share link). Use create_session to get a new one.'
 );
+const personRef = (what: string) => z.string().min(1).describe(`${what}: the friend's name (case-insensitive) or id`);
+const billRef = z.string().min(1).describe('Bill name (case-insensitive) or id');
+
+const adjustmentInput = z
+    .object({
+        type: z.enum(['amount', 'percent']).describe('"amount" = fixed money off, "percent" = % off'),
+        value: z.number().min(0).max(10_000_000).describe('0 clears the discount'),
+    })
+    .refine((a) => a.type === 'amount' || a.value <= 100, { message: 'percent must be at most 100' });
+
+const toAdjustment = (a?: { type: 'amount' | 'percent'; value: number }): Adjustment | undefined =>
+    a && a.value > 0 ? { type: a.type, value: round2(a.value) } : undefined;
+
+const sharedWith = z
+    .array(z.string().min(1))
+    .optional()
+    .describe('Names of the friends who share this item. Omit to split between everyone.');
+
+const itemInput = z.object({
+    name: z.string().trim().min(1).max(120),
+    price: z.number().min(0).max(10_000_000).describe('Price of the item before any discount'),
+    discount: adjustmentInput.optional().describe('Discount on this item only'),
+    sharedWith,
+});
+
+const payersInput = z
+    .array(z.object({ friend: personRef('Who paid'), amount: z.number().positive().max(10_000_000).optional() }))
+    .min(1)
+    .max(MAX_FRIENDS)
+    .optional()
+    .describe('Use instead of paidBy when several people paid the bill together. Give each amount (must add up to the bill total), or omit all amounts to split equally.');
+
+type ItemArg = z.infer<typeof itemInput>;
+type PayersArg = { friend: string; amount?: number }[];
+type AdjArg = { type: 'amount' | 'percent'; value: number };
 
 export function createMcpServer(): McpServer {
     const server = new McpServer(
-        { name: 'share-bill', version: '1.0.0' },
+        { name: 'share-bill', version: '2.0.0' },
         {
             instructions:
-                'Share Bill splits expenses between friends. Typical flow: create_session (or reuse a sessionId the user gives you), ' +
-                'add_friends, add_orders (say who paid and who shared each item; omit sharedWith to split between everyone), ' +
-                'then get_summary to see who must transfer how much to whom. Always give the user the session url so they can open it in the app. ' +
-                'Amounts are in the same currency the user speaks about (e.g. THB) with up to 2 decimals.',
+                'Share Bill splits expenses between friends. A session has friends and bills. A bill is one receipt (a restaurant, a taxi, a hotel) with items, ' +
+                'an optional discount on the whole bill, service charge % and VAT %, and the people who paid it. ' +
+                'Typical flow: create_session (or reuse a sessionId the user gives you), add_friends, add_bill for each place (items with price, optional per-item discount and who shares each item; ' +
+                'paidBy for one payer or payers for several), then get_summary for who must transfer how much to whom. ' +
+                'Discounts, service charge and VAT are shared in proportion to what each person consumed. ' +
+                'Always give the user the session url so they can open it in the app. Amounts are in the currency the user speaks about (e.g. THB) with up to 2 decimals.',
         }
     );
 
@@ -171,9 +250,9 @@ export function createMcpServer(): McpServer {
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         },
         guarded(async () => {
-            // Nothing is stored yet: the session is created by the first friend or order added to it.
-            const sessionId = randomUUID();
-            return { sessionId, url: appUrl(sessionId) };
+            // Nothing is stored yet: the session is created by the first friend or bill added to it.
+            const id = randomUUID();
+            return { sessionId: id, url: appUrl(id) };
         })
     );
 
@@ -181,7 +260,7 @@ export function createMcpServer(): McpServer {
         'get_session',
         {
             title: 'Get a bill session',
-            description: 'Returns friends, orders and the settlement plan of a session.',
+            description: 'Returns friends, bills (items, discounts, service charge, VAT, payers, who owes what per bill) and the settlement plan.',
             inputSchema: { sessionId },
             annotations: { readOnlyHint: true, openWorldHint: false },
         },
@@ -192,7 +271,7 @@ export function createMcpServer(): McpServer {
         'get_summary',
         {
             title: 'Get who owes whom',
-            description: 'Returns the minimal list of transfers needed to settle the session, plus each friend\'s net balance.',
+            description: "Returns the minimal list of transfers needed to settle the session, plus each friend's net balance.",
             inputSchema: { sessionId },
             annotations: { readOnlyHint: true, openWorldHint: false },
         },
@@ -280,77 +359,76 @@ export function createMcpServer(): McpServer {
         {
             title: 'Remove a friend',
             description:
-                'Removes a friend from the session and from every order they shared. Fails if the friend paid for an order: remove or reassign that order first.',
+                'Removes a friend from the session and from every item they shared. Fails if the friend paid for a bill: change who paid first.',
             inputSchema: { sessionId, friend: personRef('Friend to remove') },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
         },
         guarded(async (args: { sessionId: string; friend: string }) => {
             const { session } = await mutateSession(args.sessionId, (draft) => {
                 const friend = findFriend(draft, args.friend);
-                const paidOrders = draft.orders.filter((o) => o.payers.some((p) => p.id === friend.id)).map((o) => o.description);
-                if (paidOrders.length) {
-                    throw new DomainError(`${friend.name} paid for: ${paidOrders.join(', ')}. Remove or reassign those orders first.`);
+                const paidBills = draft.bills.filter((b) => b.payers.some((p) => p.id === friend.id)).map((b) => b.name || b.id);
+                if (paidBills.length) {
+                    throw new DomainError(`${friend.name} paid for: ${paidBills.join(', ')}. Change who paid those bills first.`);
                 }
                 draft.friends = draft.friends.filter((f) => f.id !== friend.id);
-                draft.orders.forEach((o) => (o.assignedTo = o.assignedTo.filter((id) => id !== friend.id)));
+                draft.bills.forEach((b) => b.items.forEach((i) => (i.assignedTo = i.assignedTo.filter((id) => id !== friend.id))));
             });
             return describe(session);
         })
     );
 
-    const sharedWith = z
-        .array(z.string().min(1))
-        .optional()
-        .describe('Names of the friends who share this item. Omit to split between everyone.');
+    const buildItem = (draft: Draft, input: ItemArg) => ({
+        id: randomUUID(),
+        name: input.name,
+        price: round2(input.price),
+        ...(toAdjustment(input.discount) ? { discount: toAdjustment(input.discount) } : {}),
+        assignedTo: sharersOf(draft, input.sharedWith),
+    });
 
     server.registerTool(
-        'add_orders',
+        'add_bill',
         {
-            title: 'Add orders',
-            description: 'Adds one or more expenses. Each says what it was, how much, who paid and who shares it.',
+            title: 'Add a bill',
+            description:
+                'Adds one receipt: a place with its items, optional discounts, service charge and VAT, and who paid. ' +
+                'Prices are before discount. Service charge is applied after the bill discount, VAT after service charge.',
             inputSchema: {
                 sessionId,
-                orders: z
-                    .array(
-                        z.object({
-                            description: z.string().trim().min(1).max(120),
-                            amount: z.number().positive().max(10_000_000).describe('Total price of the item'),
-                            paidBy: personRef('Who paid the whole amount').optional(),
-                            payers: payersInput,
-                            sharedWith,
-                        })
-                    )
-                    .min(1)
-                    .max(100),
+                name: z.string().trim().max(120).describe('Where it was, e.g. "Shabu restaurant"'),
+                items: z.array(itemInput).min(1).max(MAX_ITEMS),
+                discount: adjustmentInput.optional().describe('Discount on the whole bill (after item discounts)'),
+                servicePercent: z.number().min(0).max(100).optional().describe('Service charge %, e.g. 10'),
+                vatPercent: z.number().min(0).max(100).optional().describe('VAT %, e.g. 7'),
+                paidBy: personRef('Who paid the whole bill').optional(),
+                payers: payersInput,
             },
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         },
         guarded(
             async (args: {
                 sessionId: string;
-                orders: {
-                    description: string;
-                    amount: number;
-                    paidBy?: string;
-                    payers?: { friend: string; amount?: number }[];
-                    sharedWith?: string[];
-                }[];
+                name: string;
+                items: ItemArg[];
+                discount?: AdjArg;
+                servicePercent?: number;
+                vatPercent?: number;
+                paidBy?: string;
+                payers?: PayersArg;
             }) => {
                 const { session } = await mutateSession(args.sessionId, (draft) => {
-                    if (draft.friends.length === 0) throw new DomainError('Add friends before adding orders.');
-                    for (const input of args.orders) {
-                        const sharers = input.sharedWith?.length
-                            ? input.sharedWith.map((ref) => findFriend(draft, ref))
-                            : draft.friends;
-                        draft.orders.push({
-                            id: randomUUID(),
-                            description: input.description,
-                            amount: Math.round(input.amount * 100) / 100,
-                            payers: resolvePayers(draft, input.amount, input.paidBy, input.payers),
-                            assignedTo: Array.from(new Set(sharers.map((f) => f.id))),
-                        });
-                    }
-                    if (draft.orders.length > MAX_ORDERS) throw new DomainError(`At most ${MAX_ORDERS} orders are allowed.`);
+                    if (draft.friends.length === 0) throw new DomainError('Add friends before adding bills.');
+                    if (draft.bills.length >= MAX_BILLS) throw new DomainError(`At most ${MAX_BILLS} bills are allowed.`);
+                    const bill: DraftBill = {
+                        id: randomUUID(),
+                        name: args.name,
+                        items: args.items.map((i) => buildItem(draft, i)),
+                        ...(toAdjustment(args.discount) ? { discount: toAdjustment(args.discount) } : {}),
+                        ...(args.servicePercent ? { servicePercent: args.servicePercent } : {}),
+                        ...(args.vatPercent ? { vatPercent: args.vatPercent } : {}),
+                        payers: [],
+                    };
+                    bill.payers = resolvePayers(draft, bill, args.paidBy, args.payers);
+                    draft.bills.push(bill);
                 });
                 return describe(session);
             }
@@ -358,17 +436,106 @@ export function createMcpServer(): McpServer {
     );
 
     server.registerTool(
-        'update_order',
+        'update_bill',
         {
-            title: 'Update an order',
-            description: 'Changes the description, amount, payer or the people sharing an existing order.',
+            title: 'Update a bill',
+            description:
+                'Changes a bill\'s name, whole-bill discount (value 0 clears it), service charge %, VAT % (0 clears) and/or who paid. Use add_items / update_item / remove_item for the items.',
             inputSchema: {
                 sessionId,
-                order: z.string().min(1).describe('Order description (case-insensitive) or id'),
-                description: z.string().trim().min(1).max(120).optional(),
-                amount: z.number().positive().max(10_000_000).optional(),
-                paidBy: personRef('New payer (pays the whole amount)').optional(),
+                bill: billRef,
+                name: z.string().trim().max(120).optional(),
+                discount: adjustmentInput.optional(),
+                servicePercent: z.number().min(0).max(100).optional(),
+                vatPercent: z.number().min(0).max(100).optional(),
+                paidBy: personRef('New payer (pays the whole bill)').optional(),
                 payers: payersInput,
+            },
+            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        },
+        guarded(
+            async (args: {
+                sessionId: string;
+                bill: string;
+                name?: string;
+                discount?: AdjArg;
+                servicePercent?: number;
+                vatPercent?: number;
+                paidBy?: string;
+                payers?: PayersArg;
+            }) => {
+                const { session } = await mutateSession(args.sessionId, (draft) => {
+                    const bill = findBill(draft, args.bill);
+                    if (args.name !== undefined) bill.name = args.name;
+                    if (args.discount !== undefined) {
+                        const adj = toAdjustment(args.discount);
+                        if (adj) bill.discount = adj;
+                        else delete bill.discount;
+                    }
+                    if (args.servicePercent !== undefined) {
+                        if (args.servicePercent > 0) bill.servicePercent = args.servicePercent;
+                        else delete bill.servicePercent;
+                    }
+                    if (args.vatPercent !== undefined) {
+                        if (args.vatPercent > 0) bill.vatPercent = args.vatPercent;
+                        else delete bill.vatPercent;
+                    }
+                    if (args.paidBy !== undefined || args.payers !== undefined) {
+                        bill.payers = resolvePayers(draft, bill, args.paidBy, args.payers);
+                    }
+                });
+                return describe(session);
+            }
+        )
+    );
+
+    server.registerTool(
+        'remove_bill',
+        {
+            title: 'Remove a bill',
+            description: 'Deletes a bill and all of its items.',
+            inputSchema: { sessionId, bill: billRef },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+        },
+        guarded(async (args: { sessionId: string; bill: string }) => {
+            const { session } = await mutateSession(args.sessionId, (draft) => {
+                const bill = findBill(draft, args.bill);
+                draft.bills = draft.bills.filter((b) => b.id !== bill.id);
+            });
+            return describe(session);
+        })
+    );
+
+    server.registerTool(
+        'add_items',
+        {
+            title: 'Add items to a bill',
+            description: 'Adds items to an existing bill. Typed payer amounts on the bill are kept; payers without an amount absorb the change.',
+            inputSchema: { sessionId, bill: billRef, items: z.array(itemInput).min(1).max(MAX_ITEMS) },
+            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        },
+        guarded(async (args: { sessionId: string; bill: string; items: ItemArg[] }) => {
+            const { session } = await mutateSession(args.sessionId, (draft) => {
+                const bill = findBill(draft, args.bill);
+                bill.items.push(...args.items.map((i) => buildItem(draft, i)));
+                if (bill.items.length > MAX_ITEMS) throw new DomainError(`At most ${MAX_ITEMS} items per bill are allowed.`);
+            });
+            return describe(session);
+        })
+    );
+
+    server.registerTool(
+        'update_item',
+        {
+            title: 'Update an item',
+            description: "Changes an item's name, price, item discount (value 0 clears it) or the people sharing it.",
+            inputSchema: {
+                sessionId,
+                bill: billRef,
+                item: z.string().min(1).describe('Item name (case-insensitive) or id'),
+                name: z.string().trim().min(1).max(120).optional(),
+                price: z.number().min(0).max(10_000_000).optional(),
+                discount: adjustmentInput.optional(),
                 sharedWith,
             },
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -376,33 +543,23 @@ export function createMcpServer(): McpServer {
         guarded(
             async (args: {
                 sessionId: string;
-                order: string;
-                description?: string;
-                amount?: number;
-                paidBy?: string;
-                payers?: { friend: string; amount?: number }[];
+                bill: string;
+                item: string;
+                name?: string;
+                price?: number;
+                discount?: AdjArg;
                 sharedWith?: string[];
             }) => {
                 const { session } = await mutateSession(args.sessionId, (draft) => {
-                    const order = findOrder(draft, args.order);
-                    if (args.description !== undefined) order.description = args.description;
-                    if (args.amount !== undefined) order.amount = Math.round(args.amount * 100) / 100;
-                    if (args.paidBy !== undefined || args.payers !== undefined) {
-                        order.payers = resolvePayers(draft, order.amount, args.paidBy, args.payers);
-                    } else if (args.amount !== undefined) {
-                        // Same payers, new price: a single payer pays it all, several payers keep their proportions.
-                        const before = order.payers;
-                        const oldTotal = toCents(before.reduce((sum, p) => sum + p.amount, 0));
-                        const newTotal = toCents(order.amount);
-                        const shares = oldTotal > 0 ? before.map((p) => (toCents(p.amount) / oldTotal) * newTotal) : before.map(() => newTotal / before.length);
-                        const cents = shares.map(Math.floor);
-                        cents[0] += newTotal - cents.reduce((a, b) => a + b, 0);
-                        order.payers = before.map((p, i) => ({ id: p.id, amount: fromCents(cents[i]) }));
+                    const item = findItem(findBill(draft, args.bill), args.item);
+                    if (args.name !== undefined) item.name = args.name;
+                    if (args.price !== undefined) item.price = round2(args.price);
+                    if (args.discount !== undefined) {
+                        const adj = toAdjustment(args.discount);
+                        if (adj) item.discount = adj;
+                        else delete item.discount;
                     }
-                    if (args.sharedWith !== undefined) {
-                        const sharers = args.sharedWith.length ? args.sharedWith.map((ref) => findFriend(draft, ref)) : draft.friends;
-                        order.assignedTo = Array.from(new Set(sharers.map((f) => f.id)));
-                    }
+                    if (args.sharedWith !== undefined) item.assignedTo = sharersOf(draft, args.sharedWith);
                 });
                 return describe(session);
             }
@@ -410,17 +567,18 @@ export function createMcpServer(): McpServer {
     );
 
     server.registerTool(
-        'remove_order',
+        'remove_item',
         {
-            title: 'Remove an order',
-            description: 'Deletes an order from the session.',
-            inputSchema: { sessionId, order: z.string().min(1).describe('Order description (case-insensitive) or id') },
+            title: 'Remove an item',
+            description: 'Deletes one item from a bill.',
+            inputSchema: { sessionId, bill: billRef, item: z.string().min(1).describe('Item name (case-insensitive) or id') },
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
         },
-        guarded(async (args: { sessionId: string; order: string }) => {
+        guarded(async (args: { sessionId: string; bill: string; item: string }) => {
             const { session } = await mutateSession(args.sessionId, (draft) => {
-                const order = findOrder(draft, args.order);
-                draft.orders = draft.orders.filter((o) => o.id !== order.id);
+                const bill = findBill(draft, args.bill);
+                const item = findItem(bill, args.item);
+                bill.items = bill.items.filter((i) => i.id !== item.id);
             });
             return describe(session);
         })
@@ -444,7 +602,7 @@ export function createMcpServer(): McpServer {
                 const from = findFriend(draft, args.from);
                 const to = findFriend(draft, args.to);
                 const key = settlementKey(from.id, to.id);
-                const exists = computeSettlements(computeBalances(draft.friends, draft.orders)).some((s) => s.key === key);
+                const exists = computeSettlements(computeBalances(draft.friends, draft.bills)).some((s) => s.key === key);
                 if (!exists) throw new DomainError(`${from.name} does not need to pay ${to.name}. Call get_summary to see current transfers.`);
                 const rest = draft.paidDebts.filter((k) => k !== key);
                 draft.paidDebts = args.done ? [...rest, key] : rest;

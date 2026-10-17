@@ -8,19 +8,34 @@ export interface IFriend {
     avatar?: number;
 }
 
-export interface IOrderItem {
+export interface IAdjustment {
+    type: 'amount' | 'percent';
+    value: number;
+}
+
+export interface IItem {
     id: string;
-    description: string;
-    amount: number;
-    /** Who paid how much; one entry when a single person paid everything. */
-    payers: { id: string; amount: number }[];
+    name: string;
+    price: number;
+    discount?: IAdjustment;
     assignedTo: string[]; // friend ids
+}
+
+export interface IBill {
+    id: string;
+    name: string;
+    items: IItem[];
+    discount?: IAdjustment;
+    servicePercent?: number;
+    vatPercent?: number;
+    /** Who paid the bill; `amount` omitted = shares what is left equally. */
+    payers: { id: string; amount?: number }[];
 }
 
 export interface ISession {
     sessionId: string;
     friends: IFriend[];
-    orders: IOrderItem[];
+    bills: IBill[];
     /** Settlement keys ("fromId->toId") the group has marked as transferred. */
     paidDebts: string[];
     /** Bumped on every write; used for optimistic concurrency control. */
@@ -38,13 +53,31 @@ const FriendSchema = new Schema<IFriend>(
     { _id: false }
 );
 
-const OrderItemSchema = new Schema<IOrderItem>(
+const AdjustmentSchema = new Schema<IAdjustment>(
+    { type: { type: String, enum: ['amount', 'percent'], required: true }, value: { type: Number, required: true } },
+    { _id: false }
+);
+
+const ItemSchema = new Schema<IItem>(
     {
         id: { type: String, required: true },
-        description: { type: String, required: true },
-        amount: { type: Number, required: true },
-        payers: { type: [new Schema({ id: String, amount: Number }, { _id: false })], default: [] },
+        name: { type: String, required: true },
+        price: { type: Number, required: true },
+        discount: { type: AdjustmentSchema },
         assignedTo: { type: [String], default: [] },
+    },
+    { _id: false }
+);
+
+const BillSchema = new Schema<IBill>(
+    {
+        id: { type: String, required: true },
+        name: { type: String, default: '' },
+        items: { type: [ItemSchema], default: [] },
+        discount: { type: AdjustmentSchema },
+        servicePercent: { type: Number },
+        vatPercent: { type: Number },
+        payers: { type: [new Schema({ id: String, amount: Number }, { _id: false })], default: [] },
     },
     { _id: false }
 );
@@ -53,7 +86,7 @@ const SessionSchema = new Schema<ISession>(
     {
         sessionId: { type: String, unique: true, required: true },
         friends: { type: [FriendSchema], default: [] },
-        orders: { type: [OrderItemSchema], default: [] },
+        bills: { type: [BillSchema], default: [] },
         paidDebts: { type: [String], default: [] },
         version: { type: Number, default: 0 },
     },

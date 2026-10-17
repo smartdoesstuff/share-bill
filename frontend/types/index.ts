@@ -3,23 +3,46 @@ export interface Friend {
     name: string;
     paid?: boolean; // legacy field, transfers are tracked in SessionData.paidDebts
     paymentAddress?: string;
-    /** Index of the cartoon avatar (see components/FriendAvatar). */
+    /** Colour slot of the avatar (see components/FriendAvatar). */
     avatar?: number;
 }
 
-export interface OrderItem {
+/** A discount: a fixed amount off, or a percentage off. */
+export interface Adjustment {
+    type: "amount" | "percent";
+    value: number;
+}
+
+export interface Item {
     id: string;
-    description: string;
-    amount: number;
-    /** Who paid how much. One entry = one person paid it all. Amounts add up to `amount`. */
-    payers: { id: string; amount: number }[];
+    name: string;
+    /** Price before any discount. */
+    price: number;
+    /** Discount on this item only. */
+    discount?: Adjustment;
+    /** Friends who share this item. */
     assignedTo: string[];
+}
+
+/** One receipt: a restaurant, a taxi, a hotel... */
+export interface Bill {
+    id: string;
+    name: string;
+    items: Item[];
+    /** Discount on the whole bill, applied after item discounts. */
+    discount?: Adjustment;
+    /** Service charge %, applied after the bill discount. */
+    servicePercent?: number;
+    /** VAT %, applied after the service charge. */
+    vatPercent?: number;
+    /** Who paid the bill. `amount` omitted = shares what is left after the typed amounts, equally. */
+    payers: { id: string; amount?: number }[];
 }
 
 /** The part of a session the user edits. */
 export interface SessionData {
     friends: Friend[];
-    orders: OrderItem[];
+    bills: Bill[];
     /** Settlement keys ("fromId->toId") that have been transferred. */
     paidDebts: string[];
 }
@@ -28,11 +51,4 @@ export interface SessionData {
 export interface SessionSnapshot extends SessionData {
     sessionId: string;
     version: number;
-}
-
-export interface DebtCalculation {
-    key: string;
-    from: string;
-    to: string;
-    amount: number;
 }

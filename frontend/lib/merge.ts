@@ -1,4 +1,4 @@
-import { SessionData } from "../types";
+import { Bill, SessionData } from "../types";
 
 type WithId = { id: string };
 
@@ -48,10 +48,28 @@ function mergeSet(base: string[], local: string[], remote: string[]): string[] {
     return Array.from(out);
 }
 
+/**
+ * Merge bills: whole-bill edits follow the same rules as any record, but when both sides edited
+ * the same bill their items are merged one by one so two people adding items do not clash.
+ */
+function mergeBills(base: Bill[], local: Bill[], remote: Bill[]): Bill[] {
+    const baseById = new Map(base.map((b) => [b.id, b]));
+    const remoteById = new Map(remote.map((b) => [b.id, b]));
+    const merged = mergeById(base, local, remote);
+    return merged.map((bill) => {
+        const b = baseById.get(bill.id);
+        const r = remoteById.get(bill.id);
+        const l = local.find((x) => x.id === bill.id);
+        if (!b || !r || !l || same(l, b) || same(r, b)) return bill;
+        // Edited on both sides: local settings win, items are merged by id.
+        return { ...l, items: mergeById(b.items, l.items, r.items) };
+    });
+}
+
 export function mergeSessionData(base: SessionData, local: SessionData, remote: SessionData): SessionData {
     return {
         friends: mergeById(base.friends, local.friends, remote.friends),
-        orders: mergeById(base.orders, local.orders, remote.orders),
+        bills: mergeBills(base.bills, local.bills, remote.bills),
         paidDebts: mergeSet(base.paidDebts, local.paidDebts, remote.paidDebts),
     };
 }

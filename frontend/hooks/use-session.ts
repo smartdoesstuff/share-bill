@@ -9,7 +9,7 @@ export type LoadStatus = "loading" | "ready" | "error";
 /** idle: nothing to save · pending: edits waiting · saving · saved · error: will retry */
 export type SaveState = "idle" | "pending" | "saving" | "saved" | "error";
 
-const EMPTY: SessionData = { friends: [], orders: [], paidDebts: [] };
+const EMPTY: SessionData = { friends: [], bills: [], paidDebts: [] };
 const SAVE_DEBOUNCE_MS = 500;
 const RETRY_MS = 4000;
 const POLL_MS = 8000;
@@ -17,7 +17,7 @@ const MAX_CONFLICT_ROUNDS = 5;
 
 const pick = (s: SessionSnapshot): SessionData => ({
     friends: s.friends,
-    orders: s.orders,
+    bills: s.bills,
     paidDebts: s.paidDebts ?? [],
 });
 

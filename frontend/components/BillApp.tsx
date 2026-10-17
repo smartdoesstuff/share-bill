@@ -9,23 +9,38 @@ import { ShareButton } from "./ShareButton";
 import { STEPS, Stepper } from "./Stepper";
 import { SyncStatus } from "./SyncStatus";
 import { FriendsStep } from "./steps/FriendsStep";
-import { OrdersStep } from "./steps/OrdersStep";
+import { BillsStep } from "./steps/BillsStep";
 import { SplitStep } from "./steps/SplitStep";
 import { SummaryStep } from "./steps/SummaryStep";
 import { useSession } from "../hooks/use-session";
-import { isOrderAssigned } from "../lib/calc";
+import { computeBill, isItemAssigned } from "../lib/calc";
 import { MessageKey, useI18n } from "../lib/i18n";
 import { rememberLastSession } from "../lib/last-session";
 
 /** Why the user can't leave each step yet (null = free to continue). */
 function blockers(data: ReturnType<typeof useSession>["data"]): (MessageKey | null)[] {
+    const ids = data.friends.map((f) => f.id);
+    const results = data.bills.map((bill) => ({ bill, result: computeBill(bill, ids) }));
+    const billsBlocker: MessageKey | null =
+        data.bills.length === 0
+            ? "needOneBill"
+            : data.bills.some((b) => b.items.length === 0)
+            ? "billNeedsItems"
+            : results.some(({ bill }) => !bill.payers.some((p) => ids.includes(p.id)))
+            ? "billNeedsPayer"
+            : results.some(({ result }) => result.payersMismatch)
+            ? "billPayersMismatch"
+            : null;
     return [
         data.friends.length >= 2 ? null : "needTwoFriends",
-        data.orders.length >= 1 ? null : "needOneOrder",
-        data.orders.every((o) => isOrderAssigned(o, data.friends)) ? null : "unassignedCount",
+        billsBlocker,
+        data.bills.every((b) => b.items.every((i) => isItemAssigned(i, data.friends))) ? null : "unassignedCount",
         null,
     ];
 }
+
+const countUnassigned = (data: ReturnType<typeof useSession>["data"]) =>
+    data.bills.reduce((n, b) => n + b.items.filter((i) => !isItemAssigned(i, data.friends)).length, 0);
 
 const readStep = (): number | null => {
     const raw = Number(new URLSearchParams(window.location.search).get("step"));
@@ -118,7 +133,7 @@ export function BillApp({ sessionId }: { sessionId: string }) {
                 {status === "ready" && (
                     <>
                         {step === 0 && <FriendsStep data={data} update={update} />}
-                        {step === 1 && <OrdersStep data={data} update={update} />}
+                        {step === 1 && <BillsStep data={data} update={update} />}
                         {step === 2 && <SplitStep data={data} update={update} />}
                         {step === 3 && <SummaryStep data={data} update={update} sessionId={sessionId} />}
                     </>
@@ -131,7 +146,7 @@ export function BillApp({ sessionId }: { sessionId: string }) {
                         {blocker && step < STEPS.length - 1 && (
                             <p className="text-center text-sm text-muted-foreground">
                                 {blocker === "unassignedCount"
-                                    ? t(blocker, { count: data.orders.filter((o) => !isOrderAssigned(o, data.friends)).length })
+                                    ? t(blocker, { count: countUnassigned(data) })
                                     : t(blocker)}
                             </p>
                         )}

@@ -1,6 +1,6 @@
 # share-bill
 
-Split a bill with friends from your phone. Add friends, add who paid for what, choose who shares each item, and get the shortest list of transfers. Thai / English UI.
+Split bills with friends from your phone. Add friends, add each bill (a restaurant, a taxi, a hotel) with its items, discounts, service charge and VAT, say who paid, choose who shares each item, and get the shortest list of transfers. Thai / English UI.
 
 - `frontend/`: Next.js app, mobile-first 4-step flow (Friends → Items → Split → Summary)
 - `backend/`: Express + MongoDB REST API **and** an MCP server so an LLM can fill in bills for you
@@ -35,7 +35,11 @@ The same backend exposes the bill as [Model Context Protocol](https://modelconte
 | Streamable HTTP (stateless) | `POST https://<your-backend>/mcp` | Claude (custom connector), ChatGPT (developer-mode connector), Cursor, VS Code, MCP Inspector, … |
 | stdio | `npm run mcp:stdio` (dev) or `node dist/mcp/stdio.js` | Claude Desktop, Claude Code, any client that spawns a process |
 
-Tools: `create_session`, `get_session`, `get_summary`, `add_friends`, `update_friend`, `remove_friend`, `add_orders`, `update_order`, `remove_order`, `set_transfer_done`. Every item stores `payers` (who paid how much; one entry when one person paid it all). `add_orders` / `update_order` accept `paidBy` (one person) or `payers` (several people with the amount each paid, which must add up to the price; omit all amounts to split equally). Friends and orders are referenced by name, so a model never has to juggle ids. Tools return the link (`APP_BASE_URL/?sessionId=…`) so you can open the bill in the app.
+A session holds **friends** and **bills**. A bill is one receipt: items (each with an optional discount and the people sharing it), an optional discount on the whole bill, service charge %, VAT %, and who paid (one person, or several each with an amount, or equal shares). Discounts, service charge and VAT are split in proportion to what each person consumed: item price - item discount, minus bill discount, plus service charge, plus VAT on both.
+
+Tools: `create_session`, `get_session`, `get_summary`, `add_friends`, `update_friend`, `remove_friend`, `add_bill`, `update_bill`, `remove_bill`, `add_items`, `update_item`, `remove_item`, `set_transfer_done`. Friends, bills and items are referenced by name, so a model never has to juggle ids. Tools return the link (`APP_BASE_URL/?sessionId=…`) so you can open the bill in the app.
+
+Sessions saved before bills existed (flat `orders`) are converted on read: each old order becomes a one-item bill.
 
 Examples:
 

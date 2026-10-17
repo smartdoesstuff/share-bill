@@ -4,12 +4,13 @@ import React, { useMemo } from "react";
 import { ArrowRight, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
-import { computeBalances, computeDebts, toCents } from "../../lib/calc";
+import { computeBalances, computeBill, computeDebts } from "../../lib/calc";
 import { cn } from "../../lib/utils";
 import { useI18n } from "../../lib/i18n";
 import { ShareButton } from "../ShareButton";
 import { FriendAvatar } from "../FriendAvatar";
 import { EmptyState } from "../EmptyState";
+import { WhoAteWhat } from "../bills/WhoAteWhat";
 import { StepHeader } from "./StepHeader";
 import { StepProps } from "./types";
 
@@ -17,11 +18,12 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
     const { t, formatMoney } = useI18n();
 
     const { balances, debts } = useMemo(() => {
-        const b = computeBalances(data.friends, data.orders);
+        const b = computeBalances(data.friends, data.bills);
         return { balances: b, debts: computeDebts(b) };
-    }, [data.friends, data.orders]);
+    }, [data.friends, data.bills]);
 
-    const total = data.orders.reduce((sum, o) => sum + toCents(o.amount), 0) / 100;
+    const ids = data.friends.map((f) => f.id);
+    const total = data.bills.reduce((sum, bill) => sum + computeBill(bill, ids).total, 0) / 100;
     const average = data.friends.length ? total / data.friends.length : 0;
     const paid = new Set(data.paidDebts);
     const doneCount = debts.filter((d) => paid.has(d.key)).length;
@@ -157,6 +159,8 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
                     })}
                 </ul>
             </div>
+
+            <WhoAteWhat data={data} />
 
             <ShareButton sessionId={sessionId} variant="default" label={t("shareSummary")} className="w-full text-base" />
         </section>

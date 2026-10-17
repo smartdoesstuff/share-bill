@@ -8,6 +8,7 @@ Notes on split models seen in other apps and in everyday life, and how each one 
 | Method | How it works | In app |
 | --- | --- | --- |
 | Equal | `total / n`; the leftover cents go to the first people | Yes (per item) |
+| Item and bill discounts | Percent or fixed amount per item and on the whole bill, shared in proportion to consumption | Yes |
 | By item | Each item is split only between the people who had it | Yes |
 | Exact amounts | Each person's amount is typed in; the sum must equal the total | No |
 | Percentages | Each person pays `p%`; percentages must sum to 100 | No |
@@ -22,7 +23,7 @@ Notes on split models seen in other apps and in everyday life, and how each one 
 | By income | Ratio of (preferably post-tax) income, e.g. 500:1000 → 1:3 / 2:3. Often applied only to essentials, with fun spending split 50/50 |
 | By consumption | Metered usage (electricity, water, data), kilometres, nights, days present |
 | By room size / features | Rent split by area, plus a premium for a private bathroom or balcony |
-| Tax, tip and service charge | Allocated in proportion to each person's pre-tax subtotal, not equally (VAT 7%, service charge 10%) |
+| Tax, tip and service charge | Allocated in proportion to each person's pre-tax subtotal, not equally (VAT 7%, service charge 10%). In app: yes |
 
 ## Social rules
 

@@ -1,8 +1,8 @@
 import Session, { ISession } from '../models/Session';
-import { SessionBody } from '../lib/schemas';
+import { SessionBody, legacyOrdersToBills } from '../lib/schemas';
 
-export type SessionState = Pick<ISession, 'sessionId' | 'friends' | 'orders' | 'paidDebts' | 'version'>;
-export type SessionDraft = Pick<SessionState, 'friends' | 'orders' | 'paidDebts'>;
+export type SessionState = Pick<ISession, 'sessionId' | 'friends' | 'bills' | 'paidDebts' | 'version'>;
+export type SessionDraft = Pick<SessionState, 'friends' | 'bills' | 'paidDebts'>;
 
 export class DomainError extends Error {}
 
@@ -15,15 +15,21 @@ const toState = (doc: any): SessionState => ({
         ...(f.paymentAddress ? { paymentAddress: f.paymentAddress } : {}),
         ...(typeof f.avatar === 'number' ? { avatar: f.avatar } : {}),
     })),
-    orders: (doc.orders ?? []).map((o: any) => ({
-        id: o.id,
-        description: o.description,
-        amount: o.amount,
-        // Documents saved before multi-payer support only have `paidBy`.
-        payers: o.payers?.length
-            ? o.payers.map((p: any) => ({ id: p.id, amount: p.amount }))
-            : [{ id: o.paidBy, amount: o.amount }],
-        assignedTo: [...(o.assignedTo ?? [])],
+    // Documents saved before bills existed only have flat `orders`.
+    bills: (doc.bills ?? legacyOrdersToBills(doc.orders ?? [])).map((b: any) => ({
+        id: b.id,
+        name: b.name ?? '',
+        items: (b.items ?? []).map((i: any) => ({
+            id: i.id,
+            name: i.name,
+            price: i.price,
+            ...(i.discount ? { discount: { type: i.discount.type, value: i.discount.value } } : {}),
+            assignedTo: [...(i.assignedTo ?? [])],
+        })),
+        ...(b.discount ? { discount: { type: b.discount.type, value: b.discount.value } } : {}),
+        ...(typeof b.servicePercent === 'number' ? { servicePercent: b.servicePercent } : {}),
+        ...(typeof b.vatPercent === 'number' ? { vatPercent: b.vatPercent } : {}),
+        payers: (b.payers ?? []).map((p: any) => ({ id: p.id, ...(typeof p.amount === 'number' ? { amount: p.amount } : {}) })),
     })),
     paidDebts: [...(doc.paidDebts ?? [])],
     version: doc.version ?? 0,
@@ -34,7 +40,7 @@ export async function getSession(sessionId: string): Promise<SessionState | null
     return doc ? toState(doc) : null;
 }
 
-const emptyState = (sessionId: string): SessionState => ({ sessionId, friends: [], orders: [], paidDebts: [], version: 0 });
+const emptyState = (sessionId: string): SessionState => ({ sessionId, friends: [], bills: [], paidDebts: [], version: 0 });
 
 /**
  * Returns the stored session, or an empty version-0 one when it does not exist yet.
@@ -67,7 +73,8 @@ export async function writeSession(
         const updated = await Session.findOneAndUpdate(
             filter,
             {
-                $set: { friends: data.friends, orders: data.orders, paidDebts: data.paidDebts },
+                $set: { friends: data.friends, bills: data.bills, paidDebts: data.paidDebts },
+                $unset: { orders: '' }, // migrated documents drop the legacy field
                 $inc: { version: 1 },
             },
             { new: true, lean: true, upsert: isFirstWrite }
@@ -83,7 +90,7 @@ export async function writeSession(
 
 export const toDraft = (body: SessionBody): SessionDraft => ({
     friends: body.friends.map((f) => ({ ...f, paid: !!f.paid })),
-    orders: body.orders,
+    bills: body.bills,
     paidDebts: body.paidDebts,
 });
 
@@ -100,7 +107,7 @@ export async function mutateSession<T>(
         const current = await loadSession(sessionId);
         const draft: SessionDraft = structuredClone({
             friends: current.friends,
-            orders: current.orders,
+            bills: current.bills,
             paidDebts: current.paidDebts,
         });
         const result = mutator(draft);

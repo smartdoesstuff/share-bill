@@ -42,18 +42,21 @@ export function FriendsStep({ data, update }: StepProps) {
         const snapshot = data;
         const friend = data.friends.find((f) => f.id === id);
         if (!friend) return;
-        const paidOrders = data.orders.filter((o) => o.payers.some((p) => p.id === id)).length;
+        const paidBills = data.bills.filter((b) => b.payers.some((p) => p.id === id)).length;
 
         update((cur) => ({
             ...cur,
             friends: cur.friends.filter((f) => f.id !== id),
-            orders: cur.orders
-                .filter((o) => !o.payers.some((p) => p.id === id))
-                .map((o) => ({ ...o, assignedTo: o.assignedTo.filter((x) => x !== id) })),
+            bills: cur.bills.map((b) => ({
+                ...b,
+                // A removed payer's typed amount goes away, so the others are re-split automatically.
+                payers: b.payers.filter((p) => p.id !== id).map((p) => ({ id: p.id })),
+                items: b.items.map((i) => ({ ...i, assignedTo: i.assignedTo.filter((x) => x !== id) })),
+            })),
         }));
         toast(
-            paidOrders
-                ? t("friendDeletedWithOrders", { name: friend.name, count: paidOrders })
+            paidBills
+                ? t("friendDeletedWithBills", { name: friend.name, count: paidBills })
                 : t("friendDeleted", { name: friend.name }),
             { action: { label: t("undo"), onClick: () => update(() => snapshot) } }
         );

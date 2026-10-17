@@ -35,6 +35,7 @@ export function installFakeSessionModel() {
             return null;
         }
         Object.assign(doc, structuredClone(update.$set ?? {}));
+        Object.keys(update.$unset ?? {}).forEach((k) => delete doc[k]);
         if (update.$inc?.version) doc.version = (doc.version ?? 0) + update.$inc.version;
         return structuredClone(doc);
     };

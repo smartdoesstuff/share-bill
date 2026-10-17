@@ -1,20 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { orderSchema } from './schemas';
+import { billSchema, sessionBodySchema } from './schemas';
 
-const base = { id: 'o1', description: 'Dinner', amount: 100, assignedTo: ['a'] };
-
-test('a legacy order with paidBy becomes a single payer', () => {
-    const order = orderSchema.parse({ ...base, paidBy: 'a' }) as any;
-    assert.deepEqual(order.payers, [{ id: 'a', amount: 100 }]);
-    assert.equal('paidBy' in order, false);
+test('a legacy body with flat orders becomes one-item bills', () => {
+    const body: any = sessionBodySchema.parse({
+        baseVersion: 3,
+        friends: [{ id: 'a', name: 'Ann' }],
+        orders: [{ id: 'o1', description: 'Dinner', amount: 100, paidBy: 'a', assignedTo: ['a'] }],
+    });
+    assert.equal(body.bills.length, 1);
+    assert.equal(body.bills[0].name, 'Dinner');
+    assert.equal(body.bills[0].items[0].price, 100);
+    assert.deepEqual(body.bills[0].payers, [{ id: 'a' }]);
+    assert.equal('orders' in body, false);
 });
 
-test('payers must add up to the amount', () => {
-    assert.equal(orderSchema.safeParse({ ...base, payers: [{ id: 'a', amount: 60 }, { id: 'b', amount: 30 }] }).success, false);
-    assert.equal(orderSchema.safeParse({ ...base, payers: [{ id: 'a', amount: 60 }, { id: 'b', amount: 40 }] }).success, true);
+test('legacy multi-payer orders keep their amounts', () => {
+    const body: any = sessionBodySchema.parse({
+        baseVersion: 0,
+        friends: [],
+        orders: [{ id: 'o1', description: 'Hotel', amount: 300, payers: [{ id: 'a', amount: 200 }, { id: 'b', amount: 100 }], assignedTo: [] }],
+    });
+    assert.deepEqual(body.bills[0].payers, [{ id: 'a', amount: 200 }, { id: 'b', amount: 100 }]);
 });
 
-test('an order without any payer is rejected', () => {
-    assert.equal(orderSchema.safeParse({ ...base }).success, false);
+test('discount percent is limited to 100 and amounts to non-negative', () => {
+    const base = { id: 'b', name: '', items: [], payers: [] };
+    assert.equal(billSchema.safeParse({ ...base, discount: { type: 'percent', value: 120 } }).success, false);
+    assert.equal(billSchema.safeParse({ ...base, discount: { type: 'amount', value: -1 } }).success, false);
+    assert.equal(billSchema.safeParse({ ...base, discount: { type: 'percent', value: 10 }, servicePercent: 10, vatPercent: 7 }).success, true);
 });
