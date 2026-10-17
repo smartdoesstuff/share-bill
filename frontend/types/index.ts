@@ -26,9 +26,15 @@ export interface Item {
     assignedTo: string[];
 }
 
-/** One receipt: a restaurant, a taxi, a hotel... */
+/**
+ * An entry in the list. Either a standalone item (`solo`: one item with its own payers, the default)
+ * or a group of items paid together (a receipt, an outing...) with shared discount, service charge, VAT and payers.
+ */
 export interface Bill {
     id: string;
+    /** True for a standalone item that belongs to no group. */
+    solo?: boolean;
+    /** Group name (unused for standalone items). */
     name: string;
     items: Item[];
     /** Discount on the whole bill, applied after item discounts. */

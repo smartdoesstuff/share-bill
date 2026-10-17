@@ -1,97 +1,59 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { AdjustmentInput } from "./AdjustmentInput";
-import { ItemDraft, ItemForm } from "./ItemForm";
+import { ItemRow } from "./ItemRow";
 import { PayersPicker } from "./PayersPicker";
+import { ItemInput, Payers, Target, billTitle } from "../../lib/bills";
 import { computeBill } from "../../lib/calc";
 import { ItemFilter, isFilterActive, visibleItems } from "../../lib/filter";
-import { tagLabel } from "../../lib/tags";
-import { generateId } from "../../lib/id";
 import { cn } from "../../lib/utils";
 import { useI18n } from "../../lib/i18n";
 import { parseMoney } from "../../lib/money";
-import { Bill, Friend, Item } from "../../types";
+import { Bill, Friend } from "../../types";
 
-interface BillCardProps {
+interface GroupCardProps {
     bill: Bill;
-    index: number;
+    bills: Bill[];
     friends: Friend[];
+    groups: { id: string; title: string }[];
     open: boolean;
+    filter: ItemFilter;
     onToggle: () => void;
     onChange: (fn: (bill: Bill) => Bill) => void;
     onDelete: () => void;
-    filter: ItemFilter;
+    onAddHere: () => void;
+    onItemSave: (itemId: string, input: ItemInput, payers: Payers, target: Target) => void;
+    onItemDelete: (itemId: string) => void;
 }
 
-const sharersLabel = (item: Item, friends: Friend[], t: ReturnType<typeof useI18n>["t"]) => {
-    const names = friends.filter((f) => item.assignedTo.includes(f.id)).map((f) => f.name);
-    if (names.length === 0) return t("sharedByNobody");
-    if (names.length === friends.length) return t("sharedByEveryone");
-    return names.join(", ");
-};
-
-export function BillCard({ bill, index, friends, open, onToggle, onChange, onDelete, filter }: BillCardProps) {
+/** A group of items paid together: shared discount, service charge, VAT and payers. */
+export function GroupCard({
+    bill,
+    bills,
+    friends,
+    groups,
+    open,
+    filter,
+    onToggle,
+    onChange,
+    onDelete,
+    onAddHere,
+    onItemSave,
+    onItemDelete,
+}: GroupCardProps) {
     const { t, formatMoney } = useI18n();
-    const [showAdd, setShowAdd] = useState(bill.items.length === 0);
-    const [showExtras, setShowExtras] = useState(
-        !!bill.discount || !!bill.servicePercent || !!bill.vatPercent
-    );
-    const [editingId, setEditingId] = useState<string | null>(null);
+    const [showExtras, setShowExtras] = useState(!!bill.discount || !!bill.servicePercent || !!bill.vatPercent);
 
     const result = useMemo(() => computeBill(bill, friends.map((f) => f.id)), [bill, friends]);
-    const title = bill.name.trim() || t("billN", { n: index + 1 });
-    const filtered = isFilterActive(filter);
-    const shownItems = visibleItems(bill, filter, friends);
+    const title = billTitle(bill, bills, t);
     const nameOf = (id: string) => friends.find((f) => f.id === id)?.name ?? t("unknownPerson");
     const payerIds = bill.payers.filter((p) => friends.some((f) => f.id === p.id)).map((p) => p.id);
-
-    const addItem = (draft: ItemDraft) =>
-        onChange((b) => ({
-            ...b,
-            items: [
-                ...b.items,
-                {
-                    id: generateId(),
-                    name: draft.name,
-                    price: draft.price,
-                    ...(draft.discount ? { discount: draft.discount } : {}),
-                    ...(draft.tags.length ? { tags: draft.tags } : {}),
-                    // Most items are shared by everyone: the next step lets the user narrow it down.
-                    assignedTo: friends.map((f) => f.id),
-                },
-            ],
-        }));
-
-    const saveItem = (id: string, draft: ItemDraft) => {
-        onChange((b) => ({
-            ...b,
-            items: b.items.map((i) => {
-                if (i.id !== id) return i;
-                const { discount: _old, tags: _oldTags, ...rest } = i;
-                return {
-                    ...rest,
-                    name: draft.name,
-                    price: draft.price,
-                    ...(draft.discount ? { discount: draft.discount } : {}),
-                    ...(draft.tags.length ? { tags: draft.tags } : {}),
-                };
-            }),
-        }));
-        setEditingId(null);
-    };
-
-    const removeItem = (item: Item) => {
-        const before = bill;
-        onChange((b) => ({ ...b, items: b.items.filter((i) => i.id !== item.id) }));
-        toast(t("itemDeleted", { name: item.name }), {
-            action: { label: t("undo"), onClick: () => onChange(() => before) },
-        });
-    };
+    const shown = visibleItems(bill, filter, friends);
+    const filtered = isFilterActive(filter);
 
     const setPercent = (key: "servicePercent" | "vatPercent", raw: string) => {
         const value = parseMoney(raw);
@@ -103,12 +65,7 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
 
     return (
         <li className="rounded-2xl border bg-card">
-            <button
-                type="button"
-                onClick={onToggle}
-                aria-expanded={open}
-                className="flex min-h-[64px] w-full items-center gap-3 p-4 text-left"
-            >
+            <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-h-[64px] w-full items-center gap-3 p-4 text-left">
                 <div className="min-w-0 flex-1">
                     <p className="truncate text-base font-semibold">{title}</p>
                     <p className="truncate text-sm text-muted-foreground">
@@ -140,6 +97,7 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
                             onChange={(e) => onChange((b) => ({ ...b, name: e.target.value }))}
                             placeholder={t("billNamePlaceholder")}
                             autoComplete="off"
+                            autoFocus={bill.items.length === 0 && bill.name === ""}
                             maxLength={120}
                             className="h-12 text-base"
                         />
@@ -148,99 +106,31 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
                     <section className="space-y-2">
                         <div className="flex items-center justify-between">
                             <h3 className="text-sm font-semibold">
-                                {t("itemsTitle")} ({filtered ? `${shownItems.length}/${bill.items.length}` : bill.items.length})
+                                {t("itemsTitle")} ({filtered ? `${shown.length}/${bill.items.length}` : bill.items.length})
                             </h3>
-                            <button
-                                type="button"
-                                onClick={() => setShowAdd((v) => !v)}
-                                aria-expanded={showAdd}
-                                className="flex min-h-[44px] items-center gap-1 text-sm text-primary"
-                            >
-                                {showAdd ? (
-                                    t("hideAddItem")
-                                ) : (
-                                    <>
-                                        <Plus className="h-4 w-4" aria-hidden /> {t("showAddItem")}
-                                    </>
-                                )}
+                            <button type="button" onClick={onAddHere} className="flex min-h-[44px] items-center gap-1 text-sm text-primary">
+                                <Plus className="h-4 w-4" aria-hidden /> {t("addToGroup")}
                             </button>
                         </div>
-
-                        {showAdd && <ItemForm idPrefix={`${bill.id}-new`} submitLabel={t("addItem")} onSubmit={addItem} />}
-
-                        {shownItems.length === 0 ? (
+                        {shown.length === 0 ? (
                             <p className="rounded-xl border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
                                 {filtered && bill.items.length > 0 ? t("noItemsMatch") : t("noItems")}
                             </p>
                         ) : (
                             <ul className="divide-y rounded-xl border">
-                                {shownItems.map((item) =>
-                                    editingId === item.id ? (
-                                        <li key={item.id} className="p-2">
-                                            <ItemForm
-                                                idPrefix={`${item.id}-edit`}
-                                                initial={{ name: item.name, price: item.price, discount: item.discount, tags: item.tags ?? [] }}
-                                                submitLabel={t("saveItem")}
-                                                onSubmit={(draft) => saveItem(item.id, draft)}
-                                                onCancel={() => setEditingId(null)}
-                                                autoFocus
-                                            />
-                                        </li>
-                                    ) : (
-                                        <li key={item.id} className="flex items-start gap-2 px-3 py-2">
-                                            <div className="min-w-0 flex-1">
-                                                <p className="truncate text-base">{item.name}</p>
-                                                <p className="truncate text-xs text-muted-foreground">
-                                                    {item.discount && (
-                                                        <span className="mr-1.5 rounded-md bg-muted px-1.5 py-0.5 text-foreground">
-                                                            {item.discount.type === "percent"
-                                                                ? `-${item.discount.value}%`
-                                                                : `-${formatMoney(item.discount.value)}`}
-                                                        </span>
-                                                    )}
-                                                    {sharersLabel(item, friends, t)}
-                                                </p>
-                                                {(item.tags ?? []).length > 0 && (
-                                                    <p className="mt-1 flex flex-wrap gap-1">
-                                                        {(item.tags ?? []).map((tag) => (
-                                                            <span key={tag} className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-                                                                {tagLabel(tag, t)}
-                                                            </span>
-                                                        ))}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-base font-medium tabular-nums">
-                                                    {formatMoney((result.itemNets[item.id] ?? 0) / 100)}
-                                                </p>
-                                                {item.discount && (
-                                                    <p className="text-xs text-muted-foreground line-through tabular-nums">
-                                                        {formatMoney(item.price)}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-11 w-11 shrink-0"
-                                                aria-label={`${t("editItem")}: ${item.name}`}
-                                                onClick={() => setEditingId(item.id)}
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-11 w-11 shrink-0 text-destructive"
-                                                aria-label={`${t("deleteItem")}: ${item.name}`}
-                                                onClick={() => removeItem(item)}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </li>
-                                    )
-                                )}
+                                {shown.map((item) => (
+                                    <ItemRow
+                                        key={item.id}
+                                        card
+                                        bill={bill}
+                                        item={item}
+                                        friends={friends}
+                                        groups={groups}
+                                        netCents={result.itemNets[item.id] ?? 0}
+                                        onSave={(input, payers, target) => onItemSave(item.id, input, payers, target)}
+                                        onDelete={() => onItemDelete(item.id)}
+                                    />
+                                ))}
                             </ul>
                         )}
                     </section>
@@ -331,12 +221,7 @@ export function BillCard({ bill, index, friends, open, onToggle, onChange, onDel
                         </div>
                     </dl>
 
-                    <PayersPicker
-                        friends={friends}
-                        payers={bill.payers}
-                        result={result}
-                        onChange={(payers) => onChange((b) => ({ ...b, payers }))}
-                    />
+                    <PayersPicker friends={friends} payers={bill.payers} result={result} onChange={(payers) => onChange((b) => ({ ...b, payers }))} />
 
                     <Button variant="ghost" className="h-12 w-full text-destructive" onClick={onDelete}>
                         <Trash2 className="mr-2 h-4 w-4" aria-hidden /> {t("deleteBill")}

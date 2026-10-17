@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { FriendAvatar } from "../FriendAvatar";
 import { computeBill } from "../../lib/calc";
+import { billTitle } from "../../lib/bills";
 import { cn } from "../../lib/utils";
 import { useI18n } from "../../lib/i18n";
 import { SessionData } from "../../types";
@@ -56,7 +57,7 @@ export function WhoAteWhat({ data }: { data: SessionData }) {
                                         return (
                                             <div key={bill.id} className="space-y-1">
                                                 <p className="text-sm font-semibold">
-                                                    {bill.name.trim() || t("billN", { n: data.bills.indexOf(bill) + 1 })}
+                                                    {billTitle(bill, data.bills, t)}
                                                 </p>
                                                 <ul className="space-y-0.5 text-sm">
                                                     {mine.map((item) => (

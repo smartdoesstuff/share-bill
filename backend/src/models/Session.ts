@@ -24,6 +24,8 @@ export interface IItem {
 
 export interface IBill {
     id: string;
+    /** A standalone item, not part of a group. */
+    solo?: boolean;
     name: string;
     items: IItem[];
     discount?: IAdjustment;
@@ -74,6 +76,7 @@ const ItemSchema = new Schema<IItem>(
 const BillSchema = new Schema<IBill>(
     {
         id: { type: String, required: true },
+        solo: { type: Boolean },
         name: { type: String, default: '' },
         items: { type: [ItemSchema], default: [] },
         discount: { type: AdjustmentSchema },

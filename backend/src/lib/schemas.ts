@@ -46,6 +46,8 @@ export const payerSchema = z.object({
 
 export const billSchema = z.object({
     id: z.string().min(1).max(64),
+    /** True for a standalone item that does not belong to any group (one item, its own payers). */
+    solo: z.boolean().optional(),
     name: z.string().trim().max(120).default(''),
     items: z.array(itemSchema).max(MAX_ITEMS),
     /** Discount on the whole bill (after item discounts). */
@@ -67,6 +69,7 @@ export function legacyOrdersToBills(orders: any[]): unknown[] {
             : [{ id: o.payers?.[0]?.id ?? o.paidBy }];
         return {
             id: o.id,
+            solo: true, // a plain old order is a standalone item
             name: o.description,
             items: [{ id: `${o.id}-item`, name: o.description, price: o.amount, assignedTo: o.assignedTo ?? [] }],
             payers,

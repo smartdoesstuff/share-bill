@@ -9,7 +9,8 @@ test('a legacy body with flat orders becomes one-item bills', () => {
         orders: [{ id: 'o1', description: 'Dinner', amount: 100, paidBy: 'a', assignedTo: ['a'] }],
     });
     assert.equal(body.bills.length, 1);
-    assert.equal(body.bills[0].name, 'Dinner');
+    assert.equal(body.bills[0].name, "Dinner");
+    assert.equal(body.bills[0].solo, true);
     assert.equal(body.bills[0].items[0].price, 100);
     assert.deepEqual(body.bills[0].payers, [{ id: 'a' }]);
     assert.equal('orders' in body, false);

@@ -30,7 +30,7 @@ test('exposes the expected tools with annotations', async () => {
     assert.deepEqual(
         tools.map((t) => t.name).sort(),
         [
-            'add_bill', 'add_friends', 'add_items', 'assign_by_tag', 'create_session', 'get_session', 'get_summary', 'remove_bill',
+            'add_bill', 'add_friends', 'add_items', 'add_standalone_items', 'assign_by_tag', 'create_session', 'get_session', 'get_summary', 'remove_bill',
             'remove_friend', 'remove_item', 'set_transfer_done', 'update_bill', 'update_friend', 'update_item',
         ]
     );
@@ -193,4 +193,48 @@ test('tags: set on items, assign sharers by tag, spend per tag', async () => {
 
     const cleared = await call('update_item', { sessionId, bill: 'Bar', item: 'Fries', tags: [] });
     assert.deepEqual((cleared.data!.bills as any[])[0].items[2].tags, []);
+});
+
+test('standalone items: own payers, no group needed', async () => {
+    const { call, start } = await connect();
+    const sessionId = await start();
+
+    const res = await call('add_standalone_items', {
+        sessionId,
+        items: [
+            { name: 'Taxi', price: 120, paidBy: 'Ann' },
+            { name: 'Coffee', price: 90, paidBy: 'Bob', sharedWith: ['Bob', 'Cat'], tags: ['drink'] },
+            { name: 'Gift', price: 300, payers: [{ friend: 'Ann', amount: 200 }, { friend: 'Cat', amount: 100 }] },
+        ],
+    });
+    assert.equal(res.isError, false);
+    const bills = res.data!.bills as any[];
+    assert.equal(bills.length, 3);
+    assert.ok(bills.every((b) => b.standalone));
+    assert.deepEqual(bills[2].payers.map((p: any) => p.amount), [200, 100]);
+
+    // Typed payers must add up to the item price.
+    const bad = await call('add_standalone_items', { sessionId, items: [{ name: 'X', price: 100, payers: [{ friend: 'Ann', amount: 10 }, { friend: 'Bob', amount: 10 }] }] });
+    assert.equal(bad.isError, true);
+
+    // Edit by item name, no group needed; changing the price drops a typed split.
+    let upd = await call('update_item', { sessionId, item: 'Gift', price: 400 });
+    assert.deepEqual(((upd.data!.bills as any[])[2].payers as any[]).map((p) => p.amount), [200, 200]);
+    upd = await call('update_item', { sessionId, item: 'Taxi', paidBy: 'Cat' });
+    assert.deepEqual((upd.data!.bills as any[])[0].payers.map((p: any) => p.name), ['Cat']);
+
+    // Group-only operations refuse standalone items.
+    const asGroup = await call('add_items', { sessionId, bill: (upd.data!.bills as any[])[0].id, items: [{ name: 'More', price: 1 }] });
+    assert.equal(asGroup.isError, true);
+    assert.match(asGroup.text, /standalone item/);
+
+    const removed = await call('remove_item', { sessionId, item: 'Taxi' });
+    assert.equal((removed.data!.bills as any[]).length, 2);
+    const group = await call('add_bill', { sessionId, name: 'Dinner', items: [{ name: 'Taxi', price: 5 }], paidBy: 'Ann' });
+    const dup = await call('update_item', { sessionId, item: 'Taxi', price: 6 });
+    assert.equal(dup.isError, true); // "Taxi" inside the group is not a standalone item
+    assert.match(dup.text, /No standalone item/);
+    const inGroup = await call('update_item', { sessionId, bill: 'Dinner', item: 'Taxi', price: 6 });
+    assert.equal(inGroup.isError, false);
+    assert.equal(group.isError, false);
 });

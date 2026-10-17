@@ -57,6 +57,32 @@ function findBill(draft: Draft, ref: string): DraftBill {
     );
 }
 
+/** A group (not a standalone item): the target of add_items / update_bill. */
+function findGroup(draft: Draft, ref: string): DraftBill {
+    const bill = findBill(draft, ref);
+    if (bill.solo) throw new DomainError(`"${ref}" is a standalone item, not a group. Use update_item to change it.`);
+    return bill;
+}
+
+/** Finds an item: inside the named group, or among the standalone items when no group is given. */
+function findItemAnywhere(draft: Draft, billRef: string | undefined, itemRef: string) {
+    if (billRef) {
+        const bill = findBill(draft, billRef);
+        return { bill, item: findItem(bill, itemRef) };
+    }
+    const solos = draft.bills.filter((b) => b.solo);
+    const matches = solos
+        .flatMap((bill) => bill.items.map((item) => ({ bill, item })))
+        .filter(({ item }) => item.id === itemRef || norm(item.name) === norm(itemRef));
+    if (matches.length === 1) return matches[0];
+    const names = solos.flatMap((b) => b.items.map((i) => i.name)).join(', ') || '(none)';
+    throw new DomainError(
+        matches.length === 0
+            ? `No standalone item "${itemRef}". Standalone items: ${names}. For an item inside a group, pass the group in "bill".`
+            : `More than one standalone item is named "${itemRef}"; use the item id instead.`
+    );
+}
+
 function findItem(bill: DraftBill, ref: string) {
     const exact = bill.items.filter((i) => i.id === ref);
     const matches = exact.length ? exact : bill.items.filter((i) => norm(i.name) === norm(ref));
@@ -138,6 +164,7 @@ function describe(state: SessionState) {
         return {
             id: bill.id,
             name: bill.name,
+            standalone: !!bill.solo,
             items: bill.items.map((i) => ({
                 id: i.id,
                 name: i.name,
@@ -258,11 +285,11 @@ export function createMcpServer(): McpServer {
         { name: 'share-bill', version: '2.0.0' },
         {
             instructions:
-                'Share Bill splits expenses between friends. A session has friends and bills. A bill is one receipt (a restaurant, a taxi, a hotel) with items, ' +
-                'an optional discount on the whole bill, service charge % and VAT %, and the people who paid it. ' +
-                'Typical flow: create_session (or reuse a sessionId the user gives you), add_friends, add_bill for each place (items with price, optional per-item discount and who shares each item; ' +
+                'Share Bill splits expenses between friends. A session has friends and entries. An entry is either a standalone item (a single expense with its own payer: use add_standalone_items) ' +
+                'or a group of items paid together (use add_bill): a group has items, an optional discount on the whole group, service charge %, VAT %, and the people who paid. ' +
+                'Typical flow: create_session (or reuse a sessionId the user gives you), add_friends, add items (price, optional item discount, tags, and who shares each item; ' +
                 'paidBy for one payer or payers for several), then get_summary for who must transfer how much to whom. ' +
-                'Discounts, service charge and VAT are shared in proportion to what each person consumed. ' +
+                'Group discount, service charge and VAT are shared in proportion to what each person consumed. ' +
                 'Always give the user the session url so they can open it in the app. Amounts are in the currency the user speaks about (e.g. THB) with up to 2 decimals.',
         }
     );
@@ -286,7 +313,7 @@ export function createMcpServer(): McpServer {
         'get_session',
         {
             title: 'Get a bill session',
-            description: 'Returns friends, bills (items, discounts, service charge, VAT, payers, who owes what per bill) and the settlement plan.',
+            description: 'Returns friends, entries (standalone items and groups, with their items, discounts, service charge, VAT, payers and who owes what) and the settlement plan.',
             inputSchema: { sessionId },
             annotations: { readOnlyHint: true, openWorldHint: false },
         },
@@ -417,11 +444,12 @@ export function createMcpServer(): McpServer {
         {
             title: 'Add a bill',
             description:
-                'Adds one receipt: a place with its items, optional discounts, service charge and VAT, and who paid. ' +
-                'Prices are before discount. Service charge is applied after the bill discount, VAT after service charge.',
+                'Adds a group of items that are paid together, like one receipt or one outing: its items, an optional discount on the whole group, service charge, VAT, and who paid. ' +
+                'Prices are before discount. Service charge is applied after the group discount, VAT after service charge. ' +
+                'For a single expense paid on its own (a taxi, a coffee) use add_standalone_items instead.',
             inputSchema: {
                 sessionId,
-                name: z.string().trim().max(120).describe('Where it was, e.g. "Shabu restaurant"'),
+                name: z.string().trim().max(120).describe('A name for the group, e.g. "Dinner" or "Hotel"'),
                 items: z.array(itemInput).min(1).max(MAX_ITEMS),
                 discount: adjustmentInput.optional().describe('Discount on the whole bill (after item discounts)'),
                 servicePercent: z.number().min(0).max(100).optional().describe('Service charge %, e.g. 10'),
@@ -492,7 +520,7 @@ export function createMcpServer(): McpServer {
                 payers?: PayersArg;
             }) => {
                 const { session } = await mutateSession(args.sessionId, (draft) => {
-                    const bill = findBill(draft, args.bill);
+                    const bill = findGroup(draft, args.bill);
                     if (args.name !== undefined) bill.name = args.name;
                     if (args.discount !== undefined) {
                         const adj = toAdjustment(args.discount);
@@ -543,7 +571,7 @@ export function createMcpServer(): McpServer {
         },
         guarded(async (args: { sessionId: string; bill: string; items: ItemArg[] }) => {
             const { session } = await mutateSession(args.sessionId, (draft) => {
-                const bill = findBill(draft, args.bill);
+                const bill = findGroup(draft, args.bill);
                 bill.items.push(...args.items.map((i) => buildItem(draft, i)));
                 if (bill.items.length > MAX_ITEMS) throw new DomainError(`At most ${MAX_ITEMS} items per bill are allowed.`);
             });
@@ -552,35 +580,78 @@ export function createMcpServer(): McpServer {
     );
 
     server.registerTool(
+        'add_standalone_items',
+        {
+            title: 'Add standalone items',
+            description:
+                'Adds single expenses that are not part of any group, each with its own payer(s): a taxi, a coffee, a gift. ' +
+                'For several items paid together with a shared discount, service charge or VAT, use add_bill.',
+            inputSchema: {
+                sessionId,
+                items: z
+                    .array(
+                        itemInput.extend({
+                            paidBy: personRef('Who paid for this item').optional(),
+                            payers: payersInput,
+                        })
+                    )
+                    .min(1)
+                    .max(MAX_ITEMS),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        },
+        guarded(async (args: { sessionId: string; items: (ItemArg & { paidBy?: string; payers?: PayersArg })[] }) => {
+            const { session } = await mutateSession(args.sessionId, (draft) => {
+                if (draft.friends.length === 0) throw new DomainError('Add friends before adding items.');
+                for (const input of args.items) {
+                    if (draft.bills.length >= MAX_BILLS) throw new DomainError(`At most ${MAX_BILLS} entries are allowed.`);
+                    const bill: DraftBill = { id: randomUUID(), solo: true, name: '', items: [buildItem(draft, input)], payers: [] };
+                    bill.payers = resolvePayers(draft, bill, input.paidBy, input.payers);
+                    draft.bills.push(bill);
+                }
+            });
+            return describe(session);
+        })
+    );
+
+    const itemRefInput = z.string().min(1).describe('Item name (case-insensitive) or id');
+    const optionalBillRef = billRef.optional().describe('The group the item is in. Omit for a standalone item.');
+
+    server.registerTool(
         'update_item',
         {
             title: 'Update an item',
-            description: "Changes an item's name, price, item discount (value 0 clears it) or the people sharing it.",
+            description:
+                "Changes an item's name, price, discount (value 0 clears it), tags or the people sharing it. For a standalone item you can also change who paid.",
             inputSchema: {
                 sessionId,
-                bill: billRef,
-                item: z.string().min(1).describe('Item name (case-insensitive) or id'),
+                bill: optionalBillRef,
+                item: itemRefInput,
                 name: z.string().trim().min(1).max(120).optional(),
                 price: z.number().min(0).max(10_000_000).optional(),
                 discount: adjustmentInput.optional(),
                 tags: z.array(z.string().min(1)).max(MAX_TAGS_PER_ITEM).optional().describe('Replaces the item\'s tags; an empty list clears them'),
                 sharedWith,
+                paidBy: personRef('New payer (standalone items only)').optional(),
+                payers: payersInput,
             },
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         },
         guarded(
             async (args: {
                 sessionId: string;
-                bill: string;
+                bill?: string;
                 item: string;
                 name?: string;
                 price?: number;
                 discount?: AdjArg;
                 tags?: string[];
                 sharedWith?: string[];
+                paidBy?: string;
+                payers?: PayersArg;
             }) => {
                 const { session } = await mutateSession(args.sessionId, (draft) => {
-                    const item = findItem(findBill(draft, args.bill), args.item);
+                    const { bill, item } = findItemAnywhere(draft, args.bill, args.item);
                     if (args.name !== undefined) item.name = args.name;
                     if (args.price !== undefined) item.price = round2(args.price);
                     if (args.discount !== undefined) {
@@ -594,10 +665,35 @@ export function createMcpServer(): McpServer {
                         else delete item.tags;
                     }
                     if (args.sharedWith !== undefined) item.assignedTo = sharersOf(draft, args.sharedWith);
+                    if (args.paidBy !== undefined || args.payers !== undefined) {
+                        if (!bill.solo) throw new DomainError('Who paid is set on the group: use update_bill.');
+                        bill.payers = resolvePayers(draft, bill, args.paidBy, args.payers);
+                    } else if (bill.solo && args.price !== undefined && bill.payers.some((p) => p.amount !== undefined)) {
+                        // A typed split no longer matches the new price: fall back to an equal split.
+                        bill.payers = bill.payers.map((p) => ({ id: p.id }));
+                    }
                 });
                 return describe(session);
             }
         )
+    );
+
+    server.registerTool(
+        'remove_item',
+        {
+            title: 'Remove an item',
+            description: 'Deletes one item: from a group, or a standalone item when no group is given.',
+            inputSchema: { sessionId, bill: optionalBillRef, item: itemRefInput },
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+        },
+        guarded(async (args: { sessionId: string; bill?: string; item: string }) => {
+            const { session } = await mutateSession(args.sessionId, (draft) => {
+                const { bill, item } = findItemAnywhere(draft, args.bill, args.item);
+                if (bill.solo) draft.bills = draft.bills.filter((b) => b.id !== bill.id);
+                else bill.items = bill.items.filter((i) => i.id !== item.id);
+            });
+            return describe(session);
+        })
     );
 
     server.registerTool(
@@ -621,24 +717,6 @@ export function createMcpServer(): McpServer {
                 const items = bills.flatMap((b) => b.items).filter((i) => hasTag(i, args.tag));
                 if (items.length === 0) throw new DomainError(`No item has the tag "${args.tag}".`);
                 items.forEach((i) => (i.assignedTo = [...sharers]));
-            });
-            return describe(session);
-        })
-    );
-
-    server.registerTool(
-        'remove_item',
-        {
-            title: 'Remove an item',
-            description: 'Deletes one item from a bill.',
-            inputSchema: { sessionId, bill: billRef, item: z.string().min(1).describe('Item name (case-insensitive) or id') },
-            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-        },
-        guarded(async (args: { sessionId: string; bill: string; item: string }) => {
-            const { session } = await mutateSession(args.sessionId, (draft) => {
-                const bill = findBill(draft, args.bill);
-                const item = findItem(bill, args.item);
-                bill.items = bill.items.filter((i) => i.id !== item.id);
             });
             return describe(session);
         })

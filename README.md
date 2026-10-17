@@ -1,6 +1,6 @@
 # share-bill
 
-Split bills with friends from your phone. Add friends, add each bill (a restaurant, a taxi, a hotel) with its items, discounts, service charge and VAT, say who paid, choose who shares each item, and get the shortest list of transfers. Thai / English UI.
+Split bills with friends from your phone. Add friends, add items and say who paid for each, choose who shares each item, and get the shortest list of transfers. When items are paid together (one receipt, one outing) put them in a **group** to add a discount, service charge and VAT once. Thai / English UI.
 
 - `frontend/`: Next.js app, mobile-first 4-step flow (Friends → Items → Split → Summary)
 - `backend/`: Express + MongoDB REST API **and** an MCP server so an LLM can fill in bills for you
@@ -35,13 +35,13 @@ The same backend exposes the bill as [Model Context Protocol](https://modelconte
 | Streamable HTTP (stateless) | `POST https://<your-backend>/mcp` | Claude (custom connector), ChatGPT (developer-mode connector), Cursor, VS Code, MCP Inspector, … |
 | stdio | `npm run mcp:stdio` (dev) or `node dist/mcp/stdio.js` | Claude Desktop, Claude Code, any client that spawns a process |
 
-A session holds **friends** and **bills**. A bill is one receipt: items (each with an optional discount and the people sharing it), an optional discount on the whole bill, service charge %, VAT %, and who paid (one person, or several each with an amount, or equal shares). Discounts, service charge and VAT are split in proportion to what each person consumed: item price - item discount, minus bill discount, plus service charge, plus VAT on both.
+A session holds **friends** and **entries**. By default an entry is a **standalone item** (one item with its own payer(s)), like a plain expense list, and nothing needs a group. When wanted, items can be put in a **group** (`bill` in the API): one receipt or one outing with an optional discount on the whole group, service charge %, VAT %, and who paid. Each item can have its own discount, tags and the people sharing it. Money flows like on a Thai receipt: item price - item discount, minus group discount, plus service charge, plus VAT on both, and everything is shared in proportion to what each person consumed.
 
-Tools: `create_session`, `get_session`, `get_summary`, `add_friends`, `update_friend`, `remove_friend`, `add_bill`, `update_bill`, `remove_bill`, `add_items`, `update_item`, `remove_item`, `assign_by_tag`, `set_transfer_done`. Friends, bills and items are referenced by name, so a model never has to juggle ids. Tools return the link (`APP_BASE_URL/?sessionId=…`) so you can open the bill in the app.
+Tools: `create_session`, `get_session`, `get_summary`, `add_friends`, `update_friend`, `remove_friend`, `add_standalone_items`, `add_bill` (a group), `update_bill`, `remove_bill`, `add_items`, `update_item`, `remove_item`, `assign_by_tag`, `set_transfer_done`. Friends, groups and items are referenced by name, so a model never has to juggle ids. Tools return the link (`APP_BASE_URL/?sessionId=…`) so you can open the bill in the app.
 
 Items can carry **tags** (presets: food, drink, alcohol, dessert, other, or your own, up to 5 per item). The app filters the item lists by tag, by person, or by items nobody has been chosen for, lets you choose who shares every visible item in one tap, and shows spend per tag; `assign_by_tag` does the same bulk assignment over MCP.
 
-Sessions saved before bills existed (flat `orders`) are converted on read: each old order becomes a one-item bill.
+Sessions saved before groups existed (flat `orders`) are converted on read: each old order becomes a standalone item.
 
 Examples:
 

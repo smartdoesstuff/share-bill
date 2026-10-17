@@ -12,6 +12,7 @@ import { StepHeader } from "./StepHeader";
 import { FilterProps, StepProps } from "./types";
 import { isFilterActive, visibleItems } from "../../lib/filter";
 import { tagLabel } from "../../lib/tags";
+import { billTitle } from "../../lib/bills";
 
 export function SplitStep({ data, update, filter, onFilterChange }: StepProps & FilterProps) {
     const { t, formatMoney } = useI18n();
@@ -66,7 +67,7 @@ export function SplitStep({ data, update, filter, onFilterChange }: StepProps & 
             item.assignedTo.includes(friendId) ? item.assignedTo.filter((id) => id !== friendId) : [...item.assignedTo, friendId]
         );
 
-    const titleOf = (bill: Bill) => bill.name.trim() || t("billN", { n: data.bills.indexOf(bill) + 1 });
+    const titleOf = (bill: Bill) => billTitle(bill, data.bills, t);
 
     return (
         <section className="space-y-5">
@@ -104,7 +105,7 @@ export function SplitStep({ data, update, filter, onFilterChange }: StepProps & 
                 if (items.length === 0) return null;
                 return (
                     <div key={bill.id} className="space-y-2">
-                        <h3 className="text-base font-semibold">{titleOf(bill)}</h3>
+                        {!bill.solo && <h3 className="text-base font-semibold">{titleOf(bill)}</h3>}
                         <ul className="space-y-3">
                             {items.map((item) => {
                                 const sharers = item.assignedTo.filter((id) => allIds.includes(id));

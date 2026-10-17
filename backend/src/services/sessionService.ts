@@ -18,6 +18,7 @@ const toState = (doc: any): SessionState => ({
     // Documents saved before bills existed only have flat `orders`.
     bills: (doc.bills ?? legacyOrdersToBills(doc.orders ?? [])).map((b: any) => ({
         id: b.id,
+        ...(b.solo ? { solo: true } : {}),
         name: b.name ?? '',
         items: (b.items ?? []).map((i: any) => ({
             id: i.id,
