@@ -18,17 +18,35 @@ export const friendSchema = z.object({
     avatar: z.number().int().min(0).max(31).optional(),
 });
 
-export const orderSchema = z.object({
+const payerSchema = z.object({
     id: z.string().min(1).max(64),
-    description: z.string().trim().min(1).max(120),
     amount: z.number().finite().min(0).max(10_000_000),
-    paidBy: z.string().min(1).max(64),
-    payers: z
-        .array(z.object({ id: z.string().min(1).max(64), amount: z.number().finite().min(0).max(10_000_000) }))
-        .max(MAX_FRIENDS)
-        .optional(),
-    assignedTo: z.array(z.string().min(1).max(64)).max(MAX_FRIENDS),
 });
+
+const orderObject = z
+    .object({
+        id: z.string().min(1).max(64),
+        description: z.string().trim().min(1).max(120),
+        amount: z.number().finite().min(0).max(10_000_000),
+        /** Who paid how much. One entry = one person paid it all. */
+        payers: z.array(payerSchema).min(1).max(MAX_FRIENDS),
+        assignedTo: z.array(z.string().min(1).max(64)).max(MAX_FRIENDS),
+    })
+    .refine((o) => o.payers.reduce((sum, p) => sum + Math.round(p.amount * 100), 0) === Math.round(o.amount * 100), {
+        message: 'payers must add up to the order amount',
+        path: ['payers'],
+    });
+
+/** Older clients (and stored data) used a single `paidBy`; turn it into `payers`. */
+export const orderSchema = z.preprocess((raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const { paidBy, ...order } = raw as Record<string, unknown>;
+    const payers = order.payers;
+    if ((!Array.isArray(payers) || payers.length === 0) && typeof paidBy === 'string') {
+        return { ...order, payers: [{ id: paidBy, amount: order.amount }] };
+    }
+    return order;
+}, orderObject);
 
 export const sessionBodySchema = z.object({
     friends: z.array(friendSchema).max(MAX_FRIENDS),

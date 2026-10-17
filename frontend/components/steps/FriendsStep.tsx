@@ -7,7 +7,6 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { useI18n } from "../../lib/i18n";
 import { generateId } from "../../lib/id";
-import { payersOf } from "../../lib/calc";
 import { FriendAvatar, nextFreeAvatar } from "../FriendAvatar";
 import { EmptyState } from "../EmptyState";
 import { StepHeader } from "./StepHeader";
@@ -43,13 +42,13 @@ export function FriendsStep({ data, update }: StepProps) {
         const snapshot = data;
         const friend = data.friends.find((f) => f.id === id);
         if (!friend) return;
-        const paidOrders = data.orders.filter((o) => payersOf(o).some((p) => p.id === id)).length;
+        const paidOrders = data.orders.filter((o) => o.payers.some((p) => p.id === id)).length;
 
         update((cur) => ({
             ...cur,
             friends: cur.friends.filter((f) => f.id !== id),
             orders: cur.orders
-                .filter((o) => !payersOf(o).some((p) => p.id === id))
+                .filter((o) => !o.payers.some((p) => p.id === id))
                 .map((o) => ({ ...o, assignedTo: o.assignedTo.filter((x) => x !== id) })),
         }));
         toast(

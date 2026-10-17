@@ -113,3 +113,29 @@ test('create_session stores nothing until something is added', async () => {
     await call('add_friends', { sessionId: data!.sessionId, friends: [{ name: 'Ann' }] });
     assert.equal(store.size, 1);
 });
+
+test('several payers without amounts split the price equally; stored shape is always payers', async () => {
+    const { call } = await connect();
+    const { data } = await call('create_session', {});
+    const sessionId = data!.sessionId as string;
+    await call('add_friends', { sessionId, friends: [{ name: 'Ann' }, { name: 'Bob' }, { name: 'Cat' }] });
+
+    const res = await call('add_orders', {
+        sessionId,
+        orders: [
+            { description: 'Taxi', amount: 100, payers: [{ friend: 'Ann' }, { friend: 'Bob' }, { friend: 'Cat' }] },
+            { description: 'Snack', amount: 30, paidBy: 'Ann' },
+        ],
+    });
+    const orders = res.data!.orders as any[];
+    assert.deepEqual(orders[0].payers.map((p: any) => p.amount), [33.34, 33.33, 33.33]);
+    assert.deepEqual(orders[1].payers, [{ name: 'Ann', amount: 30 }]);
+    assert.equal('paidBy' in orders[0], false);
+
+    const partial = await call('add_orders', { sessionId, orders: [{ description: 'X', amount: 10, payers: [{ friend: 'Ann', amount: 5 }, { friend: 'Bob' }] }] });
+    assert.equal(partial.isError, true);
+
+    // Changing only the price keeps payers' proportions.
+    const upd = await call('update_order', { sessionId, order: 'Taxi', amount: 200 });
+    assert.equal((upd.data!.orders as any[])[0].payers.reduce((s: number, p: any) => s + p.amount, 0), 200);
+});

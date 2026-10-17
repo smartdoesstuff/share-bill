@@ -11,10 +11,8 @@ export interface OrderItem {
     id: string;
     description: string;
     amount: number;
-    /** Main payer (kept for compatibility); see `payers` when several people paid. */
-    paidBy: string;
-    /** Optional: who paid how much when more than one person paid. Amounts add up to `amount`. */
-    payers?: { id: string; amount: number }[];
+    /** Who paid how much. One entry = one person paid it all. Amounts add up to `amount`. */
+    payers: { id: string; amount: number }[];
     assignedTo: string[];
 }
 

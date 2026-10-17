@@ -6,9 +6,8 @@ export interface CalcFriend {
 export interface CalcOrder {
     id: string;
     amount: number;
-    paidBy: string;
-    /** Who actually paid how much. When empty, `paidBy` paid the whole amount. */
-    payers?: { id: string; amount: number }[];
+    /** Who paid how much. One entry = one person paid it all. */
+    payers: { id: string; amount: number }[];
     assignedTo: string[];
 }
 
@@ -35,15 +34,10 @@ export function splitCents(totalCents: number, parts: number): number[] {
 }
 
 
-/** Who paid and how much: explicit split between several people, or `paidBy` for the full amount. */
-export function payersOf(order: Pick<CalcOrder, 'amount' | 'paidBy' | 'payers'>): { id: string; amount: number }[] {
-    return order.payers && order.payers.length > 0 ? order.payers : [{ id: order.paidBy, amount: order.amount }];
-}
-
 /** Credits per payer in cents, adjusted so they always add up to the order total. */
-export function payerCredits(order: Pick<CalcOrder, 'amount' | 'paidBy' | 'payers'>, known: Set<string>): [string, number][] {
+export function payerCredits(order: Pick<CalcOrder, 'amount' | 'payers'>, known: Set<string>): [string, number][] {
     const total = toCents(order.amount);
-    const credits = payersOf(order)
+    const credits = order.payers
         .filter((p) => known.has(p.id))
         .map((p) => [p.id, toCents(p.amount)] as [string, number]);
     if (credits.length === 0) return [];

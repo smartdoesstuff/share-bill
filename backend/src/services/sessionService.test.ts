@@ -71,3 +71,14 @@ test('two first writes racing: one creates, the other gets a conflict', async ()
     ]);
     assert.deepEqual([a.ok, b.ok].sort(), [false, true]);
 });
+
+test('stored orders that only have paidBy are returned as payers', async () => {
+    const { store } = installFakeSessionModel();
+    store.set(SID, {
+        sessionId: SID,
+        friends: [friend],
+        orders: [{ id: 'o1', description: 'Old', amount: 50, paidBy: 'f1', assignedTo: ['f1'] }],
+    });
+    const loaded = await loadSession(SID);
+    assert.deepEqual(loaded.orders[0].payers, [{ id: 'f1', amount: 50 }]);
+});

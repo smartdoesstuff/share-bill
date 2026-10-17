@@ -19,8 +19,10 @@ const toState = (doc: any): SessionState => ({
         id: o.id,
         description: o.description,
         amount: o.amount,
-        paidBy: o.paidBy,
-        ...(o.payers?.length ? { payers: o.payers.map((p: any) => ({ id: p.id, amount: p.amount })) } : {}),
+        // Documents saved before multi-payer support only have `paidBy`.
+        payers: o.payers?.length
+            ? o.payers.map((p: any) => ({ id: p.id, amount: p.amount }))
+            : [{ id: o.paidBy, amount: o.amount }],
         assignedTo: [...(o.assignedTo ?? [])],
     })),
     paidDebts: [...(doc.paidDebts ?? [])],

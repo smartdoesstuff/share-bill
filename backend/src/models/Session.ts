@@ -12,8 +12,8 @@ export interface IOrderItem {
     id: string;
     description: string;
     amount: number;
-    paidBy: string;
-    payers?: { id: string; amount: number }[];
+    /** Who paid how much; one entry when a single person paid everything. */
+    payers: { id: string; amount: number }[];
     assignedTo: string[]; // friend ids
 }
 
@@ -43,8 +43,7 @@ const OrderItemSchema = new Schema<IOrderItem>(
         id: { type: String, required: true },
         description: { type: String, required: true },
         amount: { type: Number, required: true },
-        paidBy: { type: String, required: true },
-        payers: { type: [new Schema({ id: String, amount: Number }, { _id: false })], default: undefined },
+        payers: { type: [new Schema({ id: String, amount: Number }, { _id: false })], default: [] },
         assignedTo: { type: [String], default: [] },
     },
     { _id: false }

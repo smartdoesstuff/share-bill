@@ -15,8 +15,8 @@ test('splitCents never loses a cent', () => {
 
 test('balances sum to zero and settlements clear every balance', () => {
     const orders = [
-        { id: '1', amount: 100, paidBy: 'a', assignedTo: ['a', 'b', 'c'] },
-        { id: '2', amount: 45.5, paidBy: 'b', assignedTo: ['b', 'c'] },
+        { id: '1', amount: 100, payers: [{ id: 'a', amount: 100 }], assignedTo: ['a', 'b', 'c'] },
+        { id: '2', amount: 45.5, payers: [{ id: 'b', amount: 45.5 }], assignedTo: ['b', 'c'] },
     ];
     const balances = computeBalances(friends, orders);
     assert.equal(Object.values(balances).reduce((a, b) => a + b, 0), 0);
@@ -31,9 +31,9 @@ test('balances sum to zero and settlements clear every balance', () => {
 
 test('orders nobody shares and dangling references are ignored', () => {
     const balances = computeBalances(friends, [
-        { id: '1', amount: 50, paidBy: 'a', assignedTo: [] },
-        { id: '2', amount: 30, paidBy: 'ghost', assignedTo: ['a'] },
-        { id: '3', amount: 30, paidBy: 'a', assignedTo: ['a', 'ghost'] },
+        { id: '1', amount: 50, payers: [{ id: 'a', amount: 50 }], assignedTo: [] },
+        { id: '2', amount: 30, payers: [{ id: 'ghost', amount: 30 }], assignedTo: ['a'] },
+        { id: '3', amount: 30, payers: [{ id: 'a', amount: 30 }], assignedTo: ['a', 'ghost'] },
     ]);
     assert.deepEqual(balances, { a: 0, b: 0, c: 0 });
 });
@@ -43,7 +43,6 @@ test('several payers: each is credited what they paid', () => {
         {
             id: '1',
             amount: 300,
-            paidBy: 'a',
             payers: [
                 { id: 'a', amount: 200 },
                 { id: 'b', amount: 100 },
@@ -57,7 +56,7 @@ test('several payers: each is credited what they paid', () => {
 
 test('payers that do not add up are corrected so balances still sum to zero', () => {
     const balances = computeBalances(friends, [
-        { id: '1', amount: 100, paidBy: 'a', payers: [{ id: 'a', amount: 30 }, { id: 'b', amount: 30 }], assignedTo: ['a', 'b', 'c'] },
+        { id: '1', amount: 100, payers: [{ id: 'a', amount: 30 }, { id: 'b', amount: 30 }], assignedTo: ['a', 'b', 'c'] },
     ]);
     assert.equal(Object.values(balances).reduce((x, y) => x + y, 0), 0);
 });
