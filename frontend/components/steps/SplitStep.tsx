@@ -6,7 +6,7 @@ import { Button } from "../ui/button";
 import { computeConsumed, isOrderAssigned } from "../../lib/calc";
 import { useI18n } from "../../lib/i18n";
 import { FriendAvatar } from "../FriendAvatar";
-import { MascotSays } from "../Mascot";
+import { StepHeader } from "./StepHeader";
 import { StepProps } from "./types";
 
 export function SplitStep({ data, update }: StepProps) {
@@ -37,9 +37,7 @@ export function SplitStep({ data, update }: StepProps) {
 
     return (
         <section className="space-y-5">
-            <MascotSays mood="happy" title={t("splitTitle")}>
-                {t("splitHint")}
-            </MascotSays>
+            <StepHeader step={3} total={4} title={t("splitTitle")} hint={t("splitHint")} />
 
             {unassigned > 0 && (
                 <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -52,7 +50,7 @@ export function SplitStep({ data, update }: StepProps) {
                     const sharers = order.assignedTo.filter((id) => allIds.includes(id));
                     const everyone = sharers.length === allIds.length;
                     return (
-                        <li key={order.id} className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
+                        <li key={order.id} className="space-y-3 rounded-2xl border bg-card p-4">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <p className="truncate text-base font-semibold">{order.description}</p>
@@ -69,7 +67,6 @@ export function SplitStep({ data, update }: StepProps) {
                                     <Chip
                                         key={friend.id}
                                         selected={order.assignedTo.includes(friend.id)}
-                                        avatar={<FriendAvatar friend={friend} size={32} />}
                                         onClick={() => toggle(order.id, friend.id)}
                                     >
                                         {friend.name}
@@ -103,11 +100,11 @@ export function SplitStep({ data, update }: StepProps) {
 
             <div className="space-y-2">
                 <h3 className="text-base font-semibold">{t("perPersonTotals")}</h3>
-                <ul className="divide-y rounded-2xl border bg-card shadow-sm">
+                <ul className="divide-y rounded-2xl border bg-card">
                     {data.friends.map((friend) => (
                         <li key={friend.id} className="flex items-center justify-between px-4 py-3 text-base">
                             <span className="flex min-w-0 items-center gap-3">
-                                <FriendAvatar friend={friend} size={32} />
+                                <FriendAvatar friend={friend} size={28} />
                                 <span className="truncate">{friend.name}</span>
                             </span>
                             <span className="font-semibold tabular-nums">

@@ -14,11 +14,11 @@ export function Chip({ selected, avatar, className, children, ...props }: ChipPr
             type="button"
             aria-pressed={selected}
             className={cn(
-                "inline-flex min-h-[48px] items-center gap-2 rounded-full border-2 pl-2 pr-4 text-base transition-all active:scale-95",
+                "inline-flex min-h-[44px] items-center gap-1.5 rounded-full border px-4 text-base transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 selected
-                    ? "border-primary bg-primary/10 font-semibold text-primary"
-                    : "border-input bg-background text-foreground hover:bg-accent",
+                    ? "border-primary bg-primary/5 font-medium text-primary"
+                    : "border-input bg-background text-foreground hover:bg-muted",
                 className
             )}
             {...props}

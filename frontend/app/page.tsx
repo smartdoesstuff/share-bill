@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { Mascot } from "../components/Mascot";
+import { Skeleton } from "../components/ui/skeleton";
 import { LanguageToggle } from "../components/LanguageToggle";
 import { ShareButton } from "../components/ShareButton";
 import { STEPS, Stepper } from "../components/Stepper";
@@ -83,18 +83,15 @@ export default function Home() {
 
     return (
         <div className="mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col bg-background">
-            <header className="sticky top-0 z-20 border-b bg-card/95 px-4 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
+            <header className="sticky top-0 z-20 border-b bg-background/95 px-4 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
                 <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                        <Mascot mood="happy" size={40} />
-                        <div>
-                            <h1 className="text-xl font-bold leading-tight">{t("appName")}</h1>
-                            <SyncStatus state={saveState} onRetry={retrySave} />
-                        </div>
+                    <div>
+                        <h1 className="text-lg font-semibold leading-tight">{t("appName")}</h1>
+                        <SyncStatus state={saveState} onRetry={retrySave} />
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                         <LanguageToggle />
-                        <ShareButton sessionId={sessionId ?? ""} className="px-3" />
+                        <ShareButton sessionId={sessionId ?? ""} iconOnly />
                     </div>
                 </div>
                 <div className="mt-2">
@@ -104,15 +101,17 @@ export default function Home() {
 
             <main className="flex-1 px-4 pb-40 pt-5">
                 {status === "loading" && (
-                    <div className="flex flex-col items-center gap-3 pt-10 text-center" aria-busy="true" role="status">
-                        <Mascot mood="think" size={120} className="motion-safe:animate-float" />
-                        <p className="text-base text-muted-foreground">{t("loading")}</p>
+                    <div className="space-y-4" aria-busy="true" role="status">
+                        <span className="sr-only">{t("loading")}</span>
+                        <Skeleton className="h-4 w-20" />
+                        <Skeleton className="h-8 w-2/3" />
+                        <Skeleton className="h-40 w-full rounded-2xl" />
+                        <Skeleton className="h-16 w-full rounded-2xl" />
                     </div>
                 )}
 
                 {status === "error" && (
-                    <div role="alert" className="flex flex-col items-center gap-3 rounded-2xl border-2 border-destructive/30 bg-destructive/5 p-5 text-center">
-                        <Mascot mood="oops" size={96} />
+                    <div role="alert" className="space-y-3 rounded-2xl border p-5">
                         <h2 className="text-lg font-semibold">{t("loadFailedTitle")}</h2>
                         <p className="text-muted-foreground">{t("loadFailedBody")}</p>
                         <Button onClick={reload} size="lg" className="h-12 w-full text-base">

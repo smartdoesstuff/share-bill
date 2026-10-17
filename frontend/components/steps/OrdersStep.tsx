@@ -8,8 +8,8 @@ import { Input } from "../ui/input";
 import { Chip } from "../Chip";
 import { useI18n } from "../../lib/i18n";
 import { generateId } from "../../lib/id";
-import { FriendAvatar } from "../FriendAvatar";
-import { EmptyState, MascotSays } from "../Mascot";
+import { EmptyState } from "../EmptyState";
+import { StepHeader } from "./StepHeader";
 import { StepProps } from "./types";
 
 const parseAmount = (raw: string): number => {
@@ -64,11 +64,9 @@ export function OrdersStep({ data, update }: StepProps) {
 
     return (
         <section className="space-y-5">
-            <MascotSays mood="think" title={t("ordersTitle")}>
-                {t("ordersHint")}
-            </MascotSays>
+            <StepHeader step={2} total={4} title={t("ordersTitle")} hint={t("ordersHint")} />
 
-            <form onSubmit={addOrder} className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm">
+            <form onSubmit={addOrder} className="space-y-4 rounded-2xl border bg-card p-4">
                 <div className="space-y-2">
                     <label htmlFor="order-description" className="text-sm font-medium">
                         {t("description")}
@@ -107,7 +105,6 @@ export function OrdersStep({ data, update }: StepProps) {
                             <Chip
                                 key={friend.id}
                                 selected={selectedPayer === friend.id}
-                                avatar={<FriendAvatar friend={friend} size={32} />}
                                 onClick={() => setPaidBy(friend.id)}
                             >
                                 {friend.name}
@@ -122,12 +119,12 @@ export function OrdersStep({ data, update }: StepProps) {
             </form>
 
             {data.orders.length === 0 ? (
-                <EmptyState mood="think">{t("noOrders")}</EmptyState>
+                <EmptyState>{t("noOrders")}</EmptyState>
             ) : (
                 <>
                     <ul className="space-y-2">
                         {data.orders.map((order) => (
-                            <li key={order.id} className="flex items-center gap-3 rounded-2xl border bg-card p-3 shadow-sm">
+                            <li key={order.id} className="flex items-center gap-3 rounded-2xl border bg-card p-3">
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-base font-medium">{order.description}</p>
                                     <p className="truncate text-sm text-muted-foreground">

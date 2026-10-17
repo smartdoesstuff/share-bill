@@ -10,10 +10,12 @@ interface ShareButtonProps {
     sessionId: string;
     variant?: "outline" | "default";
     label?: string;
+    /** Compact icon button for the header. */
+    iconOnly?: boolean;
     className?: string;
 }
 
-export function ShareButton({ sessionId, variant = "outline", label, className }: ShareButtonProps) {
+export function ShareButton({ sessionId, variant = "outline", label, iconOnly, className }: ShareButtonProps) {
     const { t } = useI18n();
 
     const handleShare = async () => {
@@ -37,9 +39,16 @@ export function ShareButton({ sessionId, variant = "outline", label, className }
     };
 
     return (
-        <Button onClick={handleShare} variant={variant} disabled={!sessionId} className={`h-11 gap-2 ${className ?? ""}`}>
+        <Button
+            onClick={handleShare}
+            variant={iconOnly ? "ghost" : variant}
+            size={iconOnly ? "icon" : "default"}
+            disabled={!sessionId}
+            aria-label={label ?? t("share")}
+            className={`h-11 gap-2 ${iconOnly ? "w-11" : ""} ${className ?? ""}`}
+        >
             <Share2 className="h-4 w-4" aria-hidden />
-            {label ?? t("share")}
+            {!iconOnly && (label ?? t("share"))}
         </Button>
     );
 }

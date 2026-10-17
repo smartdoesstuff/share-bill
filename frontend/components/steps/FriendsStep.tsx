@@ -7,8 +7,9 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { useI18n } from "../../lib/i18n";
 import { generateId } from "../../lib/id";
-import { FriendAvatar, AVATAR_COUNT, avatarIndexOf, nextFreeAvatar } from "../FriendAvatar";
-import { EmptyState, MascotSays } from "../Mascot";
+import { FriendAvatar, nextFreeAvatar } from "../FriendAvatar";
+import { EmptyState } from "../EmptyState";
+import { StepHeader } from "./StepHeader";
 import { StepProps } from "./types";
 
 export function FriendsStep({ data, update }: StepProps) {
@@ -58,12 +59,6 @@ export function FriendsStep({ data, update }: StepProps) {
         );
     };
 
-    const changeAvatar = (id: string) =>
-        update((cur) => ({
-            ...cur,
-            friends: cur.friends.map((f) => (f.id === id ? { ...f, avatar: (avatarIndexOf(f) + 1) % AVATAR_COUNT } : f)),
-        }));
-
     const setPaymentAddress = (id: string, value: string) =>
         update((cur) => ({
             ...cur,
@@ -81,11 +76,9 @@ export function FriendsStep({ data, update }: StepProps) {
 
     return (
         <section className="space-y-5">
-            <MascotSays mood="wave" title={t("friendsTitle")}>
-                {t("friendsHint")}
-            </MascotSays>
+            <StepHeader step={1} total={4} title={t("friendsTitle")} hint={t("friendsHint")} />
 
-            <form onSubmit={addFriend} className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
+            <form onSubmit={addFriend} className="space-y-3 rounded-2xl border bg-card p-4">
                 <div className="flex gap-2">
                     <Input
                         value={name}
@@ -132,20 +125,13 @@ export function FriendsStep({ data, update }: StepProps) {
             </form>
 
             {data.friends.length === 0 ? (
-                <EmptyState mood="wave">{t("noFriends")}</EmptyState>
+                <EmptyState>{t("noFriends")}</EmptyState>
             ) : (
                 <ul className="space-y-2">
                     {data.friends.map((friend) => (
-                        <li key={friend.id} className="rounded-2xl border bg-card p-3 shadow-sm">
+                        <li key={friend.id} className="rounded-2xl border bg-card p-3">
                             <div className="flex items-center gap-3">
-                                <button
-                                    type="button"
-                                    aria-label={`${t("changeAvatar")}: ${friend.name}`}
-                                    onClick={() => changeAvatar(friend.id)}
-                                    className="shrink-0 rounded-full transition-transform active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                >
-                                    <FriendAvatar friend={friend} size={48} />
-                                </button>
+                                <FriendAvatar friend={friend} size={40} />
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-base font-medium">{friend.name}</p>
                                     {friend.paymentAddress && (

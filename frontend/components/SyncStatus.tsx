@@ -17,7 +17,7 @@ export function SyncStatus({ state, onRetry }: { state: SaveState; onRetry: () =
             )}
             {state === "pending" && <span>{t("pending")}</span>}
             {state === "saved" && (
-                <span className="flex items-center gap-1 text-green-700">
+                <span className="flex items-center gap-1 text-muted-foreground">
                     <Check className="h-3 w-3" aria-hidden /> {t("saved")}
                 </span>
             )}

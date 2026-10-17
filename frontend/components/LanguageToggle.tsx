@@ -13,7 +13,7 @@ export function LanguageToggle() {
     const { lang, setLang, t } = useI18n();
 
     return (
-        <div role="group" aria-label={t("language")} className="flex rounded-full border bg-background p-0.5">
+        <div role="group" aria-label={t("language")} className="flex items-center">
             {OPTIONS.map((option) => (
                 <button
                     key={option.value}
@@ -21,8 +21,8 @@ export function LanguageToggle() {
                     aria-pressed={lang === option.value}
                     onClick={() => setLang(option.value)}
                     className={cn(
-                        "min-h-[36px] min-w-[44px] rounded-full px-3 text-sm transition-colors",
-                        lang === option.value ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                        "min-h-[44px] min-w-[40px] px-2 text-sm transition-colors",
+                        lang === option.value ? "font-semibold text-foreground" : "text-muted-foreground"
                     )}
                 >
                     {option.label}

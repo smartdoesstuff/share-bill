@@ -9,7 +9,8 @@ import { cn } from "../../lib/utils";
 import { useI18n } from "../../lib/i18n";
 import { ShareButton } from "../ShareButton";
 import { FriendAvatar } from "../FriendAvatar";
-import { EmptyState, MascotSays } from "../Mascot";
+import { EmptyState } from "../EmptyState";
+import { StepHeader } from "./StepHeader";
 import { StepProps } from "./types";
 
 export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId: string }) {
@@ -44,18 +45,16 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
 
     return (
         <section className="space-y-6">
-            <MascotSays mood={allDone ? "party" : "happy"} title={t("summaryTitle")}>
-                {allDone ? t("allSettled") : t("summaryHint")}
-            </MascotSays>
+            <StepHeader step={4} total={4} title={t("summaryTitle")} hint={allDone ? t("allSettled") : t("summaryHint")} />
 
             <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-primary p-4 text-primary-foreground">
-                    <p className="text-sm opacity-90">{t("totalSpent")}</p>
-                    <p className="text-2xl font-bold tabular-nums">{formatMoney(total)}</p>
+                <div className="rounded-2xl border p-4">
+                    <p className="text-xs text-muted-foreground">{t("totalSpent")}</p>
+                    <p className="text-2xl font-semibold tabular-nums">{formatMoney(total)}</p>
                 </div>
-                <div className="rounded-2xl bg-muted p-4">
-                    <p className="text-sm text-muted-foreground">{t("average")}</p>
-                    <p className="text-2xl font-bold tabular-nums">{formatMoney(average)}</p>
+                <div className="rounded-2xl border p-4">
+                    <p className="text-xs text-muted-foreground">{t("average")}</p>
+                    <p className="text-2xl font-semibold tabular-nums">{formatMoney(average)}</p>
                 </div>
             </div>
 
@@ -70,7 +69,7 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
                 </div>
 
                 {debts.length === 0 ? (
-                    <EmptyState mood="party">{t("noTransfers")}</EmptyState>
+                    <EmptyState>{t("noTransfers")}</EmptyState>
                 ) : (
                     <ul className="space-y-2">
                         {debts.map((debt) => {
@@ -81,8 +80,8 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
                                 <li
                                     key={debt.key}
                                     className={cn(
-                                        "rounded-2xl border bg-card p-3 shadow-sm transition-colors",
-                                        isPaid && "border-green-600/40 bg-green-50"
+                                        "rounded-2xl border bg-card p-3 transition-colors",
+                                        isPaid && "bg-muted/60"
                                     )}
                                 >
                                     <button
@@ -96,21 +95,17 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
                                             aria-hidden
                                             className={cn(
                                                 "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2",
-                                                isPaid ? "border-green-600 bg-green-600 text-white" : "border-input"
+                                                isPaid ? "border-primary bg-primary text-primary-foreground" : "border-input"
                                             )}
                                         >
                                             {isPaid && <Check className="h-4 w-4" />}
                                         </span>
                                         <span className={cn("flex min-w-0 flex-1 items-center gap-2 text-base", isPaid && "opacity-60")}>
-                                            {from && <FriendAvatar friend={from} size={36} />}
+                                            <span className="truncate font-medium">{from?.name}</span>
                                             <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                                            {to && <FriendAvatar friend={to} size={36} />}
-                                            <span className="min-w-0 text-sm leading-tight">
-                                                <span className="block truncate font-semibold">{from?.name}</span>
-                                                <span className="block truncate text-muted-foreground">{to?.name}</span>
-                                            </span>
+                                            <span className="truncate font-medium">{to?.name}</span>
                                         </span>
-                                        <span className={cn("text-lg font-bold tabular-nums", isPaid && "line-through")}>
+                                        <span className={cn("text-base font-semibold tabular-nums", isPaid && "line-through")}>
                                             {formatMoney(debt.amount)}
                                         </span>
                                     </button>
@@ -137,7 +132,7 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
 
             <div className="space-y-2">
                 <h3 className="text-base font-semibold">{t("balances")}</h3>
-                <ul className="divide-y rounded-2xl border bg-card shadow-sm">
+                <ul className="divide-y rounded-2xl border bg-card">
                     {data.friends.map((friend) => {
                         const cents = balances[friend.id] ?? 0;
                         return (
@@ -149,8 +144,8 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
                                 <span
                                     className={cn(
                                         "shrink-0 font-semibold tabular-nums",
-                                        cents > 0 && "text-green-700",
-                                        cents < 0 && "text-red-700"
+                                        cents > 0 && "text-primary",
+                                        cents < 0 && "text-destructive"
                                     )}
                                 >
                                     {cents === 0
