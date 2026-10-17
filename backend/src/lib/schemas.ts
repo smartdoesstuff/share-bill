@@ -23,6 +23,10 @@ export const orderSchema = z.object({
     description: z.string().trim().min(1).max(120),
     amount: z.number().finite().min(0).max(10_000_000),
     paidBy: z.string().min(1).max(64),
+    payers: z
+        .array(z.object({ id: z.string().min(1).max(64), amount: z.number().finite().min(0).max(10_000_000) }))
+        .max(MAX_FRIENDS)
+        .optional(),
     assignedTo: z.array(z.string().min(1).max(64)).max(MAX_FRIENDS),
 });
 

@@ -8,6 +8,9 @@ import { Input } from "../ui/input";
 import { Chip } from "../Chip";
 import { useI18n } from "../../lib/i18n";
 import { generateId } from "../../lib/id";
+import { payersOf, toCents } from "../../lib/calc";
+import { cn } from "../../lib/utils";
+import { FriendAvatar } from "../FriendAvatar";
 import { EmptyState } from "../EmptyState";
 import { StepHeader } from "./StepHeader";
 import { StepProps } from "./types";
@@ -22,9 +25,18 @@ export function OrdersStep({ data, update }: StepProps) {
     const [description, setDescription] = useState("");
     const [amount, setAmount] = useState("");
     const [paidBy, setPaidBy] = useState("");
+    const [multi, setMulti] = useState(false);
+    const [payerAmounts, setPayerAmounts] = useState<Record<string, string>>({});
 
     const parsed = parseAmount(amount);
-    const canAdd = description.trim().length > 0 && parsed > 0 && !!paidBy;
+    // Multi-payer: what each person put in, and whether it adds up to the item price.
+    const entered = data.friends
+        .map((f) => ({ id: f.id, amount: parseAmount(payerAmounts[f.id] ?? "") }))
+        .filter((p) => p.amount > 0);
+    const paidCents = entered.reduce((sum, p) => sum + toCents(p.amount), 0);
+    const remainingCents = parsed > 0 ? toCents(parsed) - paidCents : 0;
+    const payersOk = multi ? entered.length > 0 && parsed > 0 && remainingCents === 0 : !!paidBy;
+    const canAdd = description.trim().length > 0 && parsed > 0 && payersOk;
     const nameOf = (id: string) => data.friends.find((f) => f.id === id)?.name ?? t("unknownPerson");
     const total = data.orders.reduce((sum, o) => sum + o.amount, 0);
 
@@ -39,7 +51,8 @@ export function OrdersStep({ data, update }: StepProps) {
                     id: generateId(),
                     description: description.trim(),
                     amount: parsed,
-                    paidBy,
+                    paidBy: multi ? entered[0].id : paidBy,
+                    ...(multi && entered.length > 1 ? { payers: entered } : {}),
                     // Most items are shared by everyone: the next step lets the user narrow it down.
                     assignedTo: cur.friends.map((f) => f.id),
                 },
@@ -47,6 +60,7 @@ export function OrdersStep({ data, update }: StepProps) {
         }));
         setDescription("");
         setAmount("");
+        setPayerAmounts({});
     };
 
     const removeOrder = (id: string) => {
@@ -99,22 +113,79 @@ export function OrdersStep({ data, update }: StepProps) {
                     />
                 </div>
                 <fieldset className="space-y-2">
-                    <legend className="text-sm font-medium">{t("paidBy")}</legend>
-                    <div className="flex flex-wrap gap-2">
-                        {data.friends.map((friend) => (
-                            <Chip
-                                key={friend.id}
-                                selected={selectedPayer === friend.id}
-                                onClick={() => setPaidBy(friend.id)}
-                            >
-                                {friend.name}
-                            </Chip>
-                        ))}
+                    <div className="flex items-center justify-between">
+                        <legend className="text-sm font-medium">{t("paidBy")}</legend>
+                        <button
+                            type="button"
+                            onClick={() => setMulti((m) => !m)}
+                            className="min-h-[44px] text-sm text-primary"
+                        >
+                            {multi ? t("paySingle") : t("payMultiple")}
+                        </button>
                     </div>
+                    {multi ? (
+                        <div className="space-y-2">
+                            {data.friends.map((friend) => {
+                                const value = payerAmounts[friend.id] ?? "";
+                                return (
+                                    <div key={friend.id} className="flex items-center gap-2">
+                                        <FriendAvatar friend={friend} size={28} />
+                                        <span className="min-w-0 flex-1 truncate text-base">{friend.name}</span>
+                                        {remainingCents > 0 && !value && (
+                                            <button
+                                                type="button"
+                                                className="min-h-[44px] shrink-0 px-1 text-sm text-primary"
+                                                onClick={() =>
+                                                    setPayerAmounts((cur) => ({ ...cur, [friend.id]: String(remainingCents / 100) }))
+                                                }
+                                            >
+                                                {t("fillRemaining")}
+                                            </button>
+                                        )}
+                                        <Input
+                                            value={value}
+                                            onChange={(e) => setPayerAmounts((cur) => ({ ...cur, [friend.id]: e.target.value }))}
+                                            inputMode="decimal"
+                                            pattern="[0-9]*[.,]?[0-9]*"
+                                            placeholder="0.00"
+                                            aria-label={`${t("paidAmount")}: ${friend.name}`}
+                                            className="h-11 w-28 text-right text-base"
+                                        />
+                                    </div>
+                                );
+                            })}
+                            {parsed > 0 && (
+                                <p
+                                    className={cn(
+                                        "text-sm",
+                                        remainingCents === 0 && paidCents > 0 ? "text-primary" : "text-muted-foreground"
+                                    )}
+                                >
+                                    {remainingCents === 0 && paidCents > 0
+                                        ? t("payersMatch")
+                                        : remainingCents > 0
+                                        ? t("payersShort", { amount: formatMoney(remainingCents / 100) })
+                                        : t("payersOver", { amount: formatMoney(-remainingCents / 100) })}
+                                </p>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="flex flex-wrap gap-2">
+                            {data.friends.map((friend) => (
+                                <Chip
+                                    key={friend.id}
+                                    selected={selectedPayer === friend.id}
+                                    onClick={() => setPaidBy(friend.id)}
+                                >
+                                    {friend.name}
+                                </Chip>
+                            ))}
+                        </div>
+                    )}
                 </fieldset>
                 <Button type="submit" size="lg" className="h-12 w-full text-base" disabled={!canAdd}>
                     <Plus className="mr-2 h-5 w-5" aria-hidden />
-                    {selectedPayer || data.friends.length === 0 ? t("addOrder") : t("pickPayer")}
+                    {payersOk || data.friends.length === 0 ? t("addOrder") : multi ? t("payersMustMatch") : t("pickPayer")}
                 </Button>
             </form>
 
@@ -128,7 +199,13 @@ export function OrdersStep({ data, update }: StepProps) {
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-base font-medium">{order.description}</p>
                                     <p className="truncate text-sm text-muted-foreground">
-                                        {t("paidByName", { name: nameOf(order.paidBy) })}
+                                        {payersOf(order).length > 1
+                                            ? t("paidByMany", {
+                                                  names: payersOf(order)
+                                                      .map((p) => `${nameOf(p.id)} ${formatMoney(p.amount)}`)
+                                                      .join(" · "),
+                                              })
+                                            : t("paidByName", { name: nameOf(order.paidBy) })}
                                     </p>
                                 </div>
                                 <span className="text-lg font-semibold tabular-nums">{formatMoney(order.amount)}</span>

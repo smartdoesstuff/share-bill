@@ -13,7 +13,7 @@ Notes on split models seen in other apps and in everyday life, and how each one 
 | Percentages | Each person pays `p%`; percentages must sum to 100 | No |
 | Shares / weights | Each person has `w` shares and pays `total * w / sum(w)`. Adult = 2, child = 1; nights stayed; room size | No |
 | Equal with adjustments | Subtract or add a fixed amount for some people, split the rest equally | No |
-| Several payers | One expense paid in parts by different people; each part is a credit | No |
+| Several payers | One expense paid in parts by different people; each part is a credit | Yes |
 
 ## Proportional
 

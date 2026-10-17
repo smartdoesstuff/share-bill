@@ -11,6 +11,25 @@ export function splitCents(totalCents: number, parts: number): number[] {
     return Array.from({ length: parts }, (_, i) => base + (i < remainder ? 1 : 0));
 }
 
+
+/** Who paid and how much: explicit split between several people, or `paidBy` for the full amount. */
+export function payersOf(order: Pick<OrderItem, "amount" | "paidBy" | "payers">): { id: string; amount: number }[] {
+    return order.payers && order.payers.length > 0 ? order.payers : [{ id: order.paidBy, amount: order.amount }];
+}
+
+/** Credits per payer in cents, adjusted so they always add up to the order total. */
+export function payerCredits(order: Pick<OrderItem, "amount" | "paidBy" | "payers">, known: Set<string>): [string, number][] {
+    const total = toCents(order.amount);
+    const credits = payersOf(order)
+        .filter((p) => known.has(p.id))
+        .map((p) => [p.id, toCents(p.amount)] as [string, number]);
+    if (credits.length === 0) return [];
+    // Absorb any rounding / validation gap into the first payer so balances still sum to zero.
+    const gap = total - credits.reduce((sum, [, c]) => sum + c, 0);
+    credits[0][1] += gap;
+    return credits;
+}
+
 /** Net balance in cents per friend: positive = is owed money, negative = owes money. */
 export function computeBalances(friends: Friend[], orders: OrderItem[]): Record<string, number> {
     const balances: Record<string, number> = {};
@@ -18,12 +37,13 @@ export function computeBalances(friends: Friend[], orders: OrderItem[]): Record<
     friends.forEach((f) => (balances[f.id] = 0));
 
     for (const order of orders) {
-        if (!known.has(order.paidBy)) continue;
         const sharers = Array.from(new Set(order.assignedTo.filter((id) => known.has(id)))).sort();
         if (sharers.length === 0) continue;
 
         const total = toCents(order.amount);
-        balances[order.paidBy] += total;
+        const credits = payerCredits(order, known);
+        if (credits.length === 0) continue;
+        credits.forEach(([id, cents]) => (balances[id] += cents));
         splitCents(total, sharers.length).forEach((share, i) => {
             balances[sharers[i]] -= share;
         });

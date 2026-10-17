@@ -37,3 +37,27 @@ test('orders nobody shares and dangling references are ignored', () => {
     ]);
     assert.deepEqual(balances, { a: 0, b: 0, c: 0 });
 });
+
+test('several payers: each is credited what they paid', () => {
+    const balances = computeBalances(friends, [
+        {
+            id: '1',
+            amount: 300,
+            paidBy: 'a',
+            payers: [
+                { id: 'a', amount: 200 },
+                { id: 'b', amount: 100 },
+            ],
+            assignedTo: ['a', 'b', 'c'],
+        },
+    ]);
+    // everyone owes 100; a paid 200 (+100), b paid 100 (0), c paid nothing (-100)
+    assert.deepEqual(balances, { a: 10000, b: 0, c: -10000 });
+});
+
+test('payers that do not add up are corrected so balances still sum to zero', () => {
+    const balances = computeBalances(friends, [
+        { id: '1', amount: 100, paidBy: 'a', payers: [{ id: 'a', amount: 30 }, { id: 'b', amount: 30 }], assignedTo: ['a', 'b', 'c'] },
+    ]);
+    assert.equal(Object.values(balances).reduce((x, y) => x + y, 0), 0);
+});

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { computeBalances, computeSettlements, fromCents, settlementKey } from '../lib/calc';
+import { computeBalances, computeSettlements, fromCents, payersOf, settlementKey, toCents } from '../lib/calc';
 import { MAX_FRIENDS, MAX_ORDERS, sessionIdSchema } from '../lib/schemas';
 import {
     DomainError,
@@ -45,6 +45,40 @@ function findOrder(draft: SessionDraft, ref: string) {
     );
 }
 
+const personRef = (what: string) => z.string().min(1).describe(`${what}: the friend's name (case-insensitive) or id`);
+
+/**
+ * Works out who paid an order. Either one person paid everything (`paidBy`), or several
+ * people paid parts (`payers`), whose amounts must add up to the order total.
+ */
+function resolvePayers(
+    draft: SessionDraft,
+    amount: number,
+    paidBy: string | undefined,
+    payers: { friend: string; amount: number }[] | undefined
+): { paidBy: string; payers?: { id: string; amount: number }[] } {
+    if (paidBy && payers?.length) throw new DomainError('Give either paidBy or payers, not both.');
+    if (!paidBy && !payers?.length) throw new DomainError('Say who paid: paidBy for one person, or payers for several.');
+    if (paidBy) return { paidBy: findFriend(draft, paidBy).id };
+
+    const resolved = payers!.map((p) => ({ id: findFriend(draft, p.friend).id, amount: Math.round(p.amount * 100) / 100 }));
+    if (new Set(resolved.map((p) => p.id)).size !== resolved.length) {
+        throw new DomainError('Each friend may appear only once in payers.');
+    }
+    const paidCents = resolved.reduce((sum, p) => sum + toCents(p.amount), 0);
+    if (paidCents !== toCents(amount)) {
+        throw new DomainError(`payers add up to ${fromCents(paidCents)} but the order amount is ${amount}; they must match.`);
+    }
+    return resolved.length === 1 ? { paidBy: resolved[0].id } : { paidBy: resolved[0].id, payers: resolved };
+}
+
+const payersInput = z
+    .array(z.object({ friend: personRef('Who paid this part'), amount: z.number().positive().max(10_000_000) }))
+    .min(1)
+    .max(MAX_FRIENDS)
+    .optional()
+    .describe('Use instead of paidBy when several people paid parts of the same item. Amounts must add up to the total.');
+
 /** Human/LLM friendly snapshot with ids resolved to names. */
 function describe(state: SessionState) {
     const nameOf = (id: string) => state.friends.find((f) => f.id === id)?.name ?? '(removed)';
@@ -72,6 +106,7 @@ function describe(state: SessionState) {
             description: o.description,
             amount: o.amount,
             paidBy: nameOf(o.paidBy),
+            payers: payersOf(o).map((p) => ({ name: nameOf(p.id), amount: p.amount })),
             sharedWith: o.assignedTo.map(nameOf),
         })),
         totalSpent: fromCents(state.orders.reduce((sum, o) => sum + Math.round(o.amount * 100), 0)),
@@ -105,7 +140,6 @@ const guarded =
 const sessionId = sessionIdSchema.describe(
     'The bill session id (the "sessionId" query parameter of the share link). Use create_session to get a new one.'
 );
-const personRef = (what: string) => z.string().min(1).describe(`${what}: the friend's name (case-insensitive) or id`);
 
 export function createMcpServer(): McpServer {
     const server = new McpServer(
@@ -243,7 +277,7 @@ export function createMcpServer(): McpServer {
         guarded(async (args: { sessionId: string; friend: string }) => {
             const { session } = await mutateSession(args.sessionId, (draft) => {
                 const friend = findFriend(draft, args.friend);
-                const paidOrders = draft.orders.filter((o) => o.paidBy === friend.id).map((o) => o.description);
+                const paidOrders = draft.orders.filter((o) => payersOf(o).some((p) => p.id === friend.id)).map((o) => o.description);
                 if (paidOrders.length) {
                     throw new DomainError(`${friend.name} paid for: ${paidOrders.join(', ')}. Remove or reassign those orders first.`);
                 }
@@ -271,7 +305,8 @@ export function createMcpServer(): McpServer {
                         z.object({
                             description: z.string().trim().min(1).max(120),
                             amount: z.number().positive().max(10_000_000).describe('Total price of the item'),
-                            paidBy: personRef('Who paid'),
+                            paidBy: personRef('Who paid the whole amount').optional(),
+                            payers: payersInput,
                             sharedWith,
                         })
                     )
@@ -283,12 +318,17 @@ export function createMcpServer(): McpServer {
         guarded(
             async (args: {
                 sessionId: string;
-                orders: { description: string; amount: number; paidBy: string; sharedWith?: string[] }[];
+                orders: {
+                    description: string;
+                    amount: number;
+                    paidBy?: string;
+                    payers?: { friend: string; amount: number }[];
+                    sharedWith?: string[];
+                }[];
             }) => {
                 const { session } = await mutateSession(args.sessionId, (draft) => {
                     if (draft.friends.length === 0) throw new DomainError('Add friends before adding orders.');
                     for (const input of args.orders) {
-                        const payer = findFriend(draft, input.paidBy);
                         const sharers = input.sharedWith?.length
                             ? input.sharedWith.map((ref) => findFriend(draft, ref))
                             : draft.friends;
@@ -296,7 +336,7 @@ export function createMcpServer(): McpServer {
                             id: randomUUID(),
                             description: input.description,
                             amount: Math.round(input.amount * 100) / 100,
-                            paidBy: payer.id,
+                            ...resolvePayers(draft, input.amount, input.paidBy, input.payers),
                             assignedTo: Array.from(new Set(sharers.map((f) => f.id))),
                         });
                     }
@@ -317,7 +357,8 @@ export function createMcpServer(): McpServer {
                 order: z.string().min(1).describe('Order description (case-insensitive) or id'),
                 description: z.string().trim().min(1).max(120).optional(),
                 amount: z.number().positive().max(10_000_000).optional(),
-                paidBy: personRef('New payer').optional(),
+                paidBy: personRef('New payer (pays the whole amount)').optional(),
+                payers: payersInput,
                 sharedWith,
             },
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -329,13 +370,21 @@ export function createMcpServer(): McpServer {
                 description?: string;
                 amount?: number;
                 paidBy?: string;
+                payers?: { friend: string; amount: number }[];
                 sharedWith?: string[];
             }) => {
                 const { session } = await mutateSession(args.sessionId, (draft) => {
                     const order = findOrder(draft, args.order);
                     if (args.description !== undefined) order.description = args.description;
                     if (args.amount !== undefined) order.amount = Math.round(args.amount * 100) / 100;
-                    if (args.paidBy !== undefined) order.paidBy = findFriend(draft, args.paidBy).id;
+                    if (args.paidBy !== undefined || args.payers !== undefined) {
+                        const who = resolvePayers(draft, order.amount, args.paidBy, args.payers);
+                        order.paidBy = who.paidBy;
+                        if (who.payers) order.payers = who.payers;
+                        else delete order.payers;
+                    } else if (args.amount !== undefined && order.payers?.length) {
+                        throw new DomainError('This order has several payers; pass payers again so they add up to the new amount.');
+                    }
                     if (args.sharedWith !== undefined) {
                         const sharers = args.sharedWith.length ? args.sharedWith.map((ref) => findFriend(draft, ref)) : draft.friends;
                         order.assignedTo = Array.from(new Set(sharers.map((f) => f.id)));

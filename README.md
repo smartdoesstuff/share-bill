@@ -33,7 +33,7 @@ The same backend exposes the bill as [Model Context Protocol](https://modelconte
 | Streamable HTTP (stateless) | `POST https://<your-backend>/mcp` | Claude (custom connector), ChatGPT (developer-mode connector), Cursor, VS Code, MCP Inspector, … |
 | stdio | `npm run mcp:stdio` (dev) or `node dist/mcp/stdio.js` | Claude Desktop, Claude Code, any client that spawns a process |
 
-Tools: `create_session`, `get_session`, `get_summary`, `add_friends`, `update_friend`, `remove_friend`, `add_orders`, `update_order`, `remove_order`, `set_transfer_done`. Friends and orders are referenced by name, so a model never has to juggle ids. Tools return the link (`APP_BASE_URL/?sessionId=…`) so you can open the bill in the app.
+Tools: `create_session`, `get_session`, `get_summary`, `add_friends`, `update_friend`, `remove_friend`, `add_orders`, `update_order`, `remove_order`, `set_transfer_done`. `add_orders` / `update_order` accept either `paidBy` (one person) or `payers` (several people with the amount each paid, which must add up to the price). Friends and orders are referenced by name, so a model never has to juggle ids. Tools return the link (`APP_BASE_URL/?sessionId=…`) so you can open the bill in the app.
 
 Examples:
 

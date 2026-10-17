@@ -72,3 +72,36 @@ test('cannot remove a friend who paid for an order', async () => {
     assert.equal(res.isError, true);
     assert.match(res.text, /Lunch/);
 });
+
+test('an item paid by several people', async () => {
+    const { call } = await connect();
+    const { data } = await call('create_session', {});
+    const sessionId = data!.sessionId as string;
+    await call('add_friends', { sessionId, friends: [{ name: 'Ann' }, { name: 'Bob' }, { name: 'Cat' }] });
+
+    const bad = await call('add_orders', {
+        sessionId,
+        orders: [{ description: 'Hotel', amount: 300, payers: [{ friend: 'Ann', amount: 100 }, { friend: 'Bob', amount: 100 }] }],
+    });
+    assert.equal(bad.isError, true);
+    assert.match(bad.text, /must match/);
+
+    const ok = await call('add_orders', {
+        sessionId,
+        orders: [{ description: 'Hotel', amount: 300, payers: [{ friend: 'Ann', amount: 200 }, { friend: 'Bob', amount: 100 }] }],
+    });
+    assert.equal(ok.isError, false);
+    assert.deepEqual((ok.data!.orders as any[])[0].payers, [{ name: 'Ann', amount: 200 }, { name: 'Bob', amount: 100 }]);
+
+    const { data: summary } = await call('get_summary', { sessionId });
+    assert.deepEqual((summary!.settlements as any[]).map((s) => `${s.from}->${s.to}:${s.amount}`), ['Cat->Ann:100']);
+
+    const both = await call('add_orders', {
+        sessionId,
+        orders: [{ description: 'X', amount: 10, paidBy: 'Ann', payers: [{ friend: 'Ann', amount: 10 }] }],
+    });
+    assert.equal(both.isError, true);
+
+    const cantRemove = await call('remove_friend', { sessionId, friend: 'Bob' });
+    assert.equal(cantRemove.isError, true);
+});

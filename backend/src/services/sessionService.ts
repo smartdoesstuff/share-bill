@@ -20,6 +20,7 @@ const toState = (doc: any): SessionState => ({
         description: o.description,
         amount: o.amount,
         paidBy: o.paidBy,
+        ...(o.payers?.length ? { payers: o.payers.map((p: any) => ({ id: p.id, amount: p.amount })) } : {}),
         assignedTo: [...(o.assignedTo ?? [])],
     })),
     paidDebts: [...(doc.paidDebts ?? [])],
