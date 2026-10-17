@@ -13,6 +13,7 @@ const toState = (doc: any): SessionState => ({
         name: f.name,
         paid: !!f.paid,
         ...(f.paymentAddress ? { paymentAddress: f.paymentAddress } : {}),
+        ...(typeof f.avatar === 'number' ? { avatar: f.avatar } : {}),
     })),
     orders: (doc.orders ?? []).map((o: any) => ({
         id: o.id,

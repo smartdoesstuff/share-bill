@@ -7,7 +7,8 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { useI18n } from "../../lib/i18n";
 import { generateId } from "../../lib/id";
-import { StepHeader } from "./StepHeader";
+import { FriendAvatar, AVATAR_COUNT, avatarIndexOf, nextFreeAvatar } from "../FriendAvatar";
+import { EmptyState, MascotSays } from "../Mascot";
 import { StepProps } from "./types";
 
 export function FriendsStep({ data, update }: StepProps) {
@@ -29,7 +30,7 @@ export function FriendsStep({ data, update }: StepProps) {
         const paymentAddress = address.trim() || undefined;
         update((cur) => ({
             ...cur,
-            friends: [...cur.friends, { id: generateId(), name: trimmed, paymentAddress }],
+            friends: [...cur.friends, { id: generateId(), name: trimmed, paymentAddress, avatar: nextFreeAvatar(cur.friends) }],
         }));
         setName("");
         setAddress("");
@@ -57,6 +58,12 @@ export function FriendsStep({ data, update }: StepProps) {
         );
     };
 
+    const changeAvatar = (id: string) =>
+        update((cur) => ({
+            ...cur,
+            friends: cur.friends.map((f) => (f.id === id ? { ...f, avatar: (avatarIndexOf(f) + 1) % AVATAR_COUNT } : f)),
+        }));
+
     const setPaymentAddress = (id: string, value: string) =>
         update((cur) => ({
             ...cur,
@@ -74,9 +81,11 @@ export function FriendsStep({ data, update }: StepProps) {
 
     return (
         <section className="space-y-5">
-            <StepHeader title={t("friendsTitle")} hint={t("friendsHint")} />
+            <MascotSays mood="wave" title={t("friendsTitle")}>
+                {t("friendsHint")}
+            </MascotSays>
 
-            <form onSubmit={addFriend} className="space-y-3 rounded-xl border bg-card p-4 shadow-sm">
+            <form onSubmit={addFriend} className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
                 <div className="flex gap-2">
                     <Input
                         value={name}
@@ -123,18 +132,20 @@ export function FriendsStep({ data, update }: StepProps) {
             </form>
 
             {data.friends.length === 0 ? (
-                <p className="rounded-xl border border-dashed p-6 text-center text-muted-foreground">{t("noFriends")}</p>
+                <EmptyState mood="wave">{t("noFriends")}</EmptyState>
             ) : (
                 <ul className="space-y-2">
                     {data.friends.map((friend) => (
-                        <li key={friend.id} className="rounded-xl border bg-card p-3 shadow-sm">
+                        <li key={friend.id} className="rounded-2xl border bg-card p-3 shadow-sm">
                             <div className="flex items-center gap-3">
-                                <span
-                                    aria-hidden
-                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary"
+                                <button
+                                    type="button"
+                                    aria-label={`${t("changeAvatar")}: ${friend.name}`}
+                                    onClick={() => changeAvatar(friend.id)}
+                                    className="shrink-0 rounded-full transition-transform active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 >
-                                    {Array.from(friend.name)[0]?.toUpperCase()}
-                                </span>
+                                    <FriendAvatar friend={friend} size={48} />
+                                </button>
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-base font-medium">{friend.name}</p>
                                     {friend.paymentAddress && (

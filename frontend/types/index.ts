@@ -3,6 +3,8 @@ export interface Friend {
     name: string;
     paid?: boolean; // legacy field, transfers are tracked in SessionData.paidDebts
     paymentAddress?: string;
+    /** Index of the cartoon avatar (see components/FriendAvatar). */
+    avatar?: number;
 }
 
 export interface OrderItem {

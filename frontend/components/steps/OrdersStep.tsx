@@ -8,7 +8,8 @@ import { Input } from "../ui/input";
 import { Chip } from "../Chip";
 import { useI18n } from "../../lib/i18n";
 import { generateId } from "../../lib/id";
-import { StepHeader } from "./StepHeader";
+import { FriendAvatar } from "../FriendAvatar";
+import { EmptyState, MascotSays } from "../Mascot";
 import { StepProps } from "./types";
 
 const parseAmount = (raw: string): number => {
@@ -63,9 +64,11 @@ export function OrdersStep({ data, update }: StepProps) {
 
     return (
         <section className="space-y-5">
-            <StepHeader title={t("ordersTitle")} hint={t("ordersHint")} />
+            <MascotSays mood="think" title={t("ordersTitle")}>
+                {t("ordersHint")}
+            </MascotSays>
 
-            <form onSubmit={addOrder} className="space-y-4 rounded-xl border bg-card p-4 shadow-sm">
+            <form onSubmit={addOrder} className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm">
                 <div className="space-y-2">
                     <label htmlFor="order-description" className="text-sm font-medium">
                         {t("description")}
@@ -101,7 +104,12 @@ export function OrdersStep({ data, update }: StepProps) {
                     <legend className="text-sm font-medium">{t("paidBy")}</legend>
                     <div className="flex flex-wrap gap-2">
                         {data.friends.map((friend) => (
-                            <Chip key={friend.id} selected={selectedPayer === friend.id} onClick={() => setPaidBy(friend.id)}>
+                            <Chip
+                                key={friend.id}
+                                selected={selectedPayer === friend.id}
+                                avatar={<FriendAvatar friend={friend} size={32} />}
+                                onClick={() => setPaidBy(friend.id)}
+                            >
                                 {friend.name}
                             </Chip>
                         ))}
@@ -114,12 +122,12 @@ export function OrdersStep({ data, update }: StepProps) {
             </form>
 
             {data.orders.length === 0 ? (
-                <p className="rounded-xl border border-dashed p-6 text-center text-muted-foreground">{t("noOrders")}</p>
+                <EmptyState mood="think">{t("noOrders")}</EmptyState>
             ) : (
                 <>
                     <ul className="space-y-2">
                         {data.orders.map((order) => (
-                            <li key={order.id} className="flex items-center gap-3 rounded-xl border bg-card p-3 shadow-sm">
+                            <li key={order.id} className="flex items-center gap-3 rounded-2xl border bg-card p-3 shadow-sm">
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-base font-medium">{order.description}</p>
                                     <p className="truncate text-sm text-muted-foreground">
@@ -139,7 +147,7 @@ export function OrdersStep({ data, update }: StepProps) {
                             </li>
                         ))}
                     </ul>
-                    <div className="flex items-center justify-between rounded-xl bg-muted px-4 py-3 text-base font-semibold">
+                    <div className="flex items-center justify-between rounded-2xl bg-muted px-4 py-3 text-base font-semibold">
                         <span>{t("total")}</span>
                         <span className="tabular-nums">{formatMoney(total)}</span>
                     </div>

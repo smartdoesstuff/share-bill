@@ -11,6 +11,9 @@ import {
     mutateSession,
 } from '../services/sessionService';
 
+/** Number of cartoon avatars the web app can draw. */
+const AVATAR_COUNT = 8;
+
 const appUrl = (sessionId: string): string => {
     const base = (process.env.APP_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
     return `${base}/?sessionId=${sessionId}`;
@@ -180,10 +183,14 @@ export function createMcpServer(): McpServer {
                     if (draft.friends.some((f) => norm(f.name) === norm(input.name))) {
                         throw new DomainError(`A friend named "${input.name}" already exists.`);
                     }
+                    const used = new Set(draft.friends.map((f) => f.avatar));
+                    let avatar = 0;
+                    while (used.has(avatar) && avatar < AVATAR_COUNT) avatar++;
                     draft.friends.push({
                         id: randomUUID(),
                         name: input.name,
                         paid: false,
+                        avatar: avatar % AVATAR_COUNT,
                         ...(input.paymentAddress ? { paymentAddress: input.paymentAddress } : {}),
                     });
                 }

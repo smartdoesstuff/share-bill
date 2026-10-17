@@ -18,24 +18,24 @@
 
 @layer base {
     :root {
-        --background: 0 0% 100%;
-        --foreground: 0 0% 3.9%;
+        --background: 40 60% 97%;
+        --foreground: 24 30% 12%;
         --card: 0 0% 100%;
         --card-foreground: 0 0% 3.9%;
         --popover: 0 0% 100%;
         --popover-foreground: 0 0% 3.9%;
         --primary: 22 90% 40%;
         --primary-foreground: 0 0% 100%;
-        --secondary: 0 0% 96.1%;
+        --secondary: 38 45% 93%;
         --secondary-foreground: 0 0% 9%;
-        --muted: 0 0% 96.1%;
-        --muted-foreground: 0 0% 45.1%;
-        --accent: 0 0% 96.1%;
+        --muted: 38 45% 93%;
+        --muted-foreground: 24 12% 38%;
+        --accent: 38 70% 92%;
         --accent-foreground: 0 0% 9%;
         --destructive: 0 84.2% 60.2%;
         --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 89.8%;
-        --input: 0 0% 89.8%;
+        --border: 34 35% 85%;
+        --input: 30 30% 78%;
         --ring: 22 90% 40%;
         --chart-1: 12 76% 61%;
         --chart-2: 173 58% 39%;
@@ -79,8 +79,14 @@
     html {
     -webkit-text-size-adjust: 100%;
     }
+    h1, h2, h3 {
+    font-family: var(--font-heading), var(--font-inter), var(--font-thai), system-ui, sans-serif;
+    }
     body {
     @apply bg-background text-foreground;
+    background-image: radial-gradient(circle at 12% 8%, hsl(38 100% 88% / 0.7), transparent 38%),
+        radial-gradient(circle at 92% 20%, hsl(160 70% 88% / 0.55), transparent 34%);
+    background-attachment: fixed;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     }

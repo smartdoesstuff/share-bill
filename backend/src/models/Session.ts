@@ -5,6 +5,7 @@ export interface IFriend {
     name: string;
     paid: boolean;
     paymentAddress?: string;
+    avatar?: number;
 }
 
 export interface IOrderItem {
@@ -31,6 +32,7 @@ const FriendSchema = new Schema<IFriend>(
         name: { type: String, required: true },
         paid: { type: Boolean, default: false },
         paymentAddress: { type: String },
+        avatar: { type: Number },
     },
     { _id: false }
 );

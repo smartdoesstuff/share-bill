@@ -8,7 +8,8 @@ import { computeBalances, computeDebts, toCents } from "../../lib/calc";
 import { cn } from "../../lib/utils";
 import { useI18n } from "../../lib/i18n";
 import { ShareButton } from "../ShareButton";
-import { StepHeader } from "./StepHeader";
+import { FriendAvatar } from "../FriendAvatar";
+import { EmptyState, MascotSays } from "../Mascot";
 import { StepProps } from "./types";
 
 export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId: string }) {
@@ -23,6 +24,7 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
     const average = data.friends.length ? total / data.friends.length : 0;
     const paid = new Set(data.paidDebts);
     const doneCount = debts.filter((d) => paid.has(d.key)).length;
+    const allDone = debts.length > 0 && doneCount === debts.length;
     const nameOf = (id: string) => data.friends.find((f) => f.id === id);
 
     const toggleDebt = (key: string) =>
@@ -42,14 +44,16 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
 
     return (
         <section className="space-y-6">
-            <StepHeader title={t("summaryTitle")} hint={t("summaryHint")} />
+            <MascotSays mood={allDone ? "party" : "happy"} title={t("summaryTitle")}>
+                {allDone ? t("allSettled") : t("summaryHint")}
+            </MascotSays>
 
             <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-primary p-4 text-primary-foreground">
+                <div className="rounded-2xl bg-primary p-4 text-primary-foreground">
                     <p className="text-sm opacity-90">{t("totalSpent")}</p>
                     <p className="text-2xl font-bold tabular-nums">{formatMoney(total)}</p>
                 </div>
-                <div className="rounded-xl bg-muted p-4">
+                <div className="rounded-2xl bg-muted p-4">
                     <p className="text-sm text-muted-foreground">{t("average")}</p>
                     <p className="text-2xl font-bold tabular-nums">{formatMoney(average)}</p>
                 </div>
@@ -66,17 +70,18 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
                 </div>
 
                 {debts.length === 0 ? (
-                    <p className="rounded-xl border border-dashed p-6 text-center text-muted-foreground">{t("noTransfers")}</p>
+                    <EmptyState mood="party">{t("noTransfers")}</EmptyState>
                 ) : (
                     <ul className="space-y-2">
                         {debts.map((debt) => {
                             const isPaid = paid.has(debt.key);
                             const to = nameOf(debt.to);
+                            const from = nameOf(debt.from);
                             return (
                                 <li
                                     key={debt.key}
                                     className={cn(
-                                        "rounded-xl border bg-card p-3 shadow-sm transition-colors",
+                                        "rounded-2xl border bg-card p-3 shadow-sm transition-colors",
                                         isPaid && "border-green-600/40 bg-green-50"
                                     )}
                                 >
@@ -96,10 +101,14 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
                                         >
                                             {isPaid && <Check className="h-4 w-4" />}
                                         </span>
-                                        <span className={cn("flex min-w-0 flex-1 items-center gap-2 text-base", isPaid && "text-muted-foreground")}>
-                                            <span className="truncate font-medium">{nameOf(debt.from)?.name}</span>
-                                            <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
-                                            <span className="truncate font-medium">{to?.name}</span>
+                                        <span className={cn("flex min-w-0 flex-1 items-center gap-2 text-base", isPaid && "opacity-60")}>
+                                            {from && <FriendAvatar friend={from} size={36} />}
+                                            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                                            {to && <FriendAvatar friend={to} size={36} />}
+                                            <span className="min-w-0 text-sm leading-tight">
+                                                <span className="block truncate font-semibold">{from?.name}</span>
+                                                <span className="block truncate text-muted-foreground">{to?.name}</span>
+                                            </span>
                                         </span>
                                         <span className={cn("text-lg font-bold tabular-nums", isPaid && "line-through")}>
                                             {formatMoney(debt.amount)}
@@ -124,19 +133,19 @@ export function SummaryStep({ data, update, sessionId }: StepProps & { sessionId
                         })}
                     </ul>
                 )}
-                {debts.length > 0 && doneCount === debts.length && (
-                    <p className="text-center font-medium text-green-700">{t("allSettled")}</p>
-                )}
             </div>
 
             <div className="space-y-2">
                 <h3 className="text-base font-semibold">{t("balances")}</h3>
-                <ul className="divide-y rounded-xl border bg-card shadow-sm">
+                <ul className="divide-y rounded-2xl border bg-card shadow-sm">
                     {data.friends.map((friend) => {
                         const cents = balances[friend.id] ?? 0;
                         return (
                             <li key={friend.id} className="flex items-center justify-between gap-3 px-4 py-3 text-base">
-                                <span className="truncate">{friend.name}</span>
+                                <span className="flex min-w-0 items-center gap-3">
+                                    <FriendAvatar friend={friend} size={32} />
+                                    <span className="truncate">{friend.name}</span>
+                                </span>
                                 <span
                                     className={cn(
                                         "shrink-0 font-semibold tabular-nums",

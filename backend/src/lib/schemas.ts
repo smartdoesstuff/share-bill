@@ -14,6 +14,8 @@ export const friendSchema = z.object({
     name: z.string().trim().min(1).max(60),
     paid: z.boolean().optional().default(false),
     paymentAddress: z.string().trim().max(200).optional(),
+    /** Index of the cartoon avatar shown for this friend. */
+    avatar: z.number().int().min(0).max(31).optional(),
 });
 
 export const orderSchema = z.object({
